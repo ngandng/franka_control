@@ -26,7 +26,7 @@
     ```
     # Replace with your desired version and Ubuntu codename
     VERSION=0.20.0      # 0.20.0 works with us
-    CODENAME=focal      # or jammy, noble
+    CODENAME=noble      # or jammy, focal (To check ubuntu codename `lsb_release -a`)
 
     wget https://github.com/frankarobotics/libfranka/releases/download/${VERSION}/libfranka_${VERSION}_${CODENAME}_amd64.deb
     sudo dpkg -i libfranka_${VERSION}_${CODENAME}_amd64.deb

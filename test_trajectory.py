@@ -30,9 +30,6 @@ def signal_handler(sig, frame):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--ip", type=str, default="localhost", help="Robot IP address")
-    args = parser.parse_args()
 
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -44,7 +41,7 @@ def main():
         print(f"Could not connect to robot: {e}")
         sys.exit(-1)
 
-    setDefaultBehaviour(robot)
+    setDefaultBehaviour(robot)              # sets up baseline safety parameters
 
     initial_position = [0,
                         -math.pi / 4,
@@ -52,7 +49,7 @@ def main():
                         -3 * math.pi / 4,
                         0,
                         math.pi / 2,
-                        math.pi / 4]
+                        math.pi / 4]        # 7 movable joints
 
     time_elapsed = 0.0
     direction = 1.0
@@ -63,13 +60,14 @@ def main():
 
         time_elapsed += period_sec
 
+        # TARGET POSE: interpolate of 7 points
         target_positions = [
             initial_position[i] + direction * 0.25
             for i in range(7)
         ]
 
         time_since_last_log += period_sec
-        if time_since_last_log >= 1.0:
+        if time_since_last_log >= 1.0:      # Go back and forth every 1 second
             direction *= -1.0
             time_since_last_log = 0.0
 
@@ -77,11 +75,12 @@ def main():
             joint_positions=target_positions
         )
 
+
     joint_position_control_configuration = \
         franka.AsyncPositionControlHandler.Configuration(
             maximum_joint_velocities=kDefaultMaximumVelocities,
             goal_tolerance=kDefaultGoalTolerance
-        )
+        )   # safety filters for the position control handler
 
     result = franka.AsyncPositionControlHandler.configure(robot,
                                                    joint_position_control_configuration)
@@ -93,17 +92,21 @@ def main():
     position_control_handler = result.handler
     target_feedback = position_control_handler.get_target_feedback()
 
+
+    ### CONTROL LOOP ###
     time_step = 0.020  # 20 ms, 50 Hz
 
     global motion_finished
     while not motion_finished:
         loop_start = time.monotonic()
 
+        # 1. Check for hardware errors
         target_feedback = position_control_handler.get_target_feedback()
         if target_feedback.error_message is not None:
             print(target_feedback.error_message)
             sys.exit(-1)
 
+        # 2. Calculate and push the next goal state
         next_target = calculate_joint_position_target(time_step)
         command_result = position_control_handler.set_joint_position_target(next_target)
 
@@ -111,12 +114,14 @@ def main():
             print(command_result.error_message)
             sys.exit(-1)
 
+        # 3. Check if the motion duration has been reached
         if time_elapsed > 10.0:
             position_control_handler.stop_control()
             motion_finished = True
             print("Control finished")
             break
-
+        
+        # 4. Sleep to maintain the control loop rate
         sleep_time = time_step - (time.monotonic() - loop_start)
         if sleep_time > 0:
             time.sleep(sleep_time)

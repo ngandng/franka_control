@@ -17,6 +17,7 @@
 ## Step 3. Installation
 - Create virtual environment and install dependencies
     ```
+    sudo apt install build-essential cmake libeigen3-dev
     python3 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt

@@ -9,9 +9,10 @@ GRIPPER_OPEN   = 0.08   # metres (Franka max aperture)
 GRIPPER_CLOSED = 0.04   # metres (half closed)
 
 # ── Interpolation settings ────────────────────────────────────────────────────
-TIME_STEP          = 0.020   # 50 Hz
-SECS_PER_WAYPOINT  = 2.0     # seconds to travel between two configurations
-GRIPPER_ACTION_SEC = 1.0     # seconds spent opening / closing gripper
+TIME_STEP          = 0.020      # 50 Hz
+SECS_PER_WAYPOINT  = 2.0        # seconds to travel between two configurations
+GRIPPER_ACTION_SEC = 1.0        # seconds spent opening / closing gripper
+MAX_ALLOWED_VELOCITY = 0.5      # rad/s
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -134,13 +135,28 @@ def build_trajectory(configurations: list[dict]) -> list[dict]:
         prev_joints = prev_cfg["joints"]
         prev_gripper = gripper_state(prev_cfg)
 
+
         # ── 3a. Move arm from prev to current ─────────────────────────────
-        move_steps = max(2, int(SECS_PER_WAYPOINT / TIME_STEP))
+        # Calculate the absolute furthest distance any single joint has to travel
+        joint_deltas = np.abs(np.array(joints) - np.array(prev_joints))
+        max_joint_delta = np.max(joint_deltas)
+
+        # Dynamically calculate how many seconds this specific movement actually needs
+        # Time = Distance / Velocity
+        required_seconds = max_joint_delta / MAX_ALLOWED_VELOCITY
+        
+        # Ensure it takes at least your default time, but scales up for long distances
+        segment_duration = max(SECS_PER_WAYPOINT, required_seconds)
+
+        # Calculate steps based on the safe, dynamic duration
+        move_steps = max(2, int(segment_duration / TIME_STEP))
+        
         move_wps   = interpolate(prev_joints, joints, prev_gripper,
                                  move_steps, t)
         move_wps[0]["event"] = f"MOVE {prev_cfg['name']} -> {cfg['name']}"
         trajectory.extend(move_wps)
         t += move_steps * TIME_STEP
+
 
         # ── 3b. Gripper action at transition configurations ────────────────
         if cfg["is_transition"] and gripper != prev_gripper:

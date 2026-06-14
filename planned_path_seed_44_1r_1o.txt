@@ -1,0 +1,186 @@
+================================================================================
+PLANNED PATH WITH 6 CONFIGURATIONS
+RANDOM SEED: 44
+================================================================================
+
+Orbit1: {q1->q2}
+Orbit Information: id=126712232997136, hex=0x733e7da2f110
+  Robot States: {0: 'TRANSIT'}
+  Object States: {0: 'TRANSIT'}
+  Attachments: {0: 'None'}
+  Grasp Pose Objects: []
+  Placement Pose Objects: [0]
+  Placement Pose Matrices:
+    Object 0:
+[[1.   0.   0.   0.7 ]
+ [0.   1.   0.   0.  ]
+ [0.   0.   1.   0.65]
+ [0.   0.   0.   1.  ]]
+  Configurations in this orbit path:
+  q1 (Configuration 0):
+    Joint Angles: [[0.0, -0.5, 0.0, -2.5, 0.0, 2.0, 0.8]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: 0.0000 rad (0.00 deg)
+      Joint 1: -0.5000 rad (-28.65 deg)
+      Joint 2: 0.0000 rad (0.00 deg)
+      Joint 3: -2.5000 rad (-143.24 deg)
+      Joint 4: 0.0000 rad (0.00 deg)
+      Joint 5: 2.0000 rad (114.59 deg)
+      Joint 6: 0.8000 rad (45.84 deg)
+    Attachments: {0: None}
+    Is Transition: False
+    Parent Orbit IDs: [126712232997136]
+  q2 (Configuration 1):
+    Joint Angles: [[-0.4194, 0.548, 0.3828, -2.1841, -0.434, 2.6606, 2.6577]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: -0.4194 rad (-24.03 deg)
+      Joint 1: 0.5480 rad (31.40 deg)
+      Joint 2: 0.3828 rad (21.93 deg)
+      Joint 3: -2.1841 rad (-125.14 deg)
+      Joint 4: -0.4340 rad (-24.87 deg)
+      Joint 5: 2.6606 rad (152.44 deg)
+      Joint 6: 2.6577 rad (152.27 deg)
+    Attachments: {0: 0}
+    Is Transition: True
+    Parent Orbit IDs: [126712232997136, 126711742502368]
+    Grasp Poses: [0]
+      Object 0:
+[[ 2.220446e-16 -1.000000e+00 -1.224647e-16  0.000000e+00]
+ [-1.000000e+00 -2.220446e-16 -2.465190e-32  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  2.000000e-02]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+
+Orbit2: {q2->q3->q4}
+Orbit Information: id=126711742502368, hex=0x733e606695e0
+  Robot States: {0: 'TRANSFER'}
+  Object States: {0: 'TRANSFER'}
+  Attachments: {0: 'object 0'}
+  Grasp Pose Objects: [0]
+  Placement Pose Objects: []
+  Grasp Pose Matrices:
+    Object 0:
+[[ 2.220446e-16 -1.000000e+00 -1.224647e-16  0.000000e+00]
+ [-1.000000e+00 -2.220446e-16 -2.465190e-32  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  2.000000e-02]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+  Configurations in this orbit path:
+  q2 (Configuration 1):
+    Joint Angles: [[-0.4194, 0.548, 0.3828, -2.1841, -0.434, 2.6606, 2.6577]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: -0.4194 rad (-24.03 deg)
+      Joint 1: 0.5480 rad (31.40 deg)
+      Joint 2: 0.3828 rad (21.93 deg)
+      Joint 3: -2.1841 rad (-125.14 deg)
+      Joint 4: -0.4340 rad (-24.87 deg)
+      Joint 5: 2.6606 rad (152.44 deg)
+      Joint 6: 2.6577 rad (152.27 deg)
+    Attachments: {0: 0}
+    Is Transition: True
+    Parent Orbit IDs: [126712232997136, 126711742502368]
+    Grasp Poses: [0]
+      Object 0:
+[[ 2.220446e-16 -1.000000e+00 -1.224647e-16  0.000000e+00]
+ [-1.000000e+00 -2.220446e-16 -2.465190e-32  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  2.000000e-02]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+  q3 (Configuration 2):
+    Joint Angles: [[-0.7216, 0.72, 0.7129, -1.515, -1.0696, 3.1883, 1.4567]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: -0.7216 rad (-41.34 deg)
+      Joint 1: 0.7200 rad (41.25 deg)
+      Joint 2: 0.7129 rad (40.85 deg)
+      Joint 3: -1.5150 rad (-86.80 deg)
+      Joint 4: -1.0696 rad (-61.28 deg)
+      Joint 5: 3.1883 rad (182.68 deg)
+      Joint 6: 1.4567 rad (83.46 deg)
+    Attachments: {0: 0}
+    Is Transition: False
+    Parent Orbit IDs: [126711742502368]
+  q4 (Configuration 3):
+    Joint Angles: [[-0.4037, 1.4951, 0.1167, -0.3333, -0.1203, 1.8272, 1.9918]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: -0.4037 rad (-23.13 deg)
+      Joint 1: 1.4951 rad (85.66 deg)
+      Joint 2: 0.1167 rad (6.69 deg)
+      Joint 3: -0.3333 rad (-19.10 deg)
+      Joint 4: -0.1203 rad (-6.89 deg)
+      Joint 5: 1.8272 rad (104.69 deg)
+      Joint 6: 1.9918 rad (114.12 deg)
+    Attachments: {0: None}
+    Is Transition: True
+    Parent Orbit IDs: [126711742502368, 126711742885920]
+    Placement Poses: [0]
+      Object 0:
+[[ 1.    0.    0.    0.9 ]
+ [ 0.    1.    0.   -0.3 ]
+ [ 0.    0.    1.    0.65]
+ [ 0.    0.    0.    1.  ]]
+
+Orbit3: {q4->q5->q6}
+Orbit Information: id=126711742885920, hex=0x733e606c7020
+  Robot States: {0: 'TRANSIT'}
+  Object States: {0: 'TRANSIT'}
+  Attachments: {0: 'None'}
+  Grasp Pose Objects: []
+  Placement Pose Objects: [0]
+  Placement Pose Matrices:
+    Object 0:
+[[ 1.    0.    0.    0.9 ]
+ [ 0.    1.    0.   -0.3 ]
+ [ 0.    0.    1.    0.65]
+ [ 0.    0.    0.    1.  ]]
+  Configurations in this orbit path:
+  q4 (Configuration 3):
+    Joint Angles: [[-0.4037, 1.4951, 0.1167, -0.3333, -0.1203, 1.8272, 1.9918]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: -0.4037 rad (-23.13 deg)
+      Joint 1: 1.4951 rad (85.66 deg)
+      Joint 2: 0.1167 rad (6.69 deg)
+      Joint 3: -0.3333 rad (-19.10 deg)
+      Joint 4: -0.1203 rad (-6.89 deg)
+      Joint 5: 1.8272 rad (104.69 deg)
+      Joint 6: 1.9918 rad (114.12 deg)
+    Attachments: {0: None}
+    Is Transition: True
+    Parent Orbit IDs: [126711742502368, 126711742885920]
+    Placement Poses: [0]
+      Object 0:
+[[ 1.    0.    0.    0.9 ]
+ [ 0.    1.    0.   -0.3 ]
+ [ 0.    0.    1.    0.65]
+ [ 0.    0.    0.    1.  ]]
+  q5 (Configuration 4):
+    Joint Angles: [[-0.2911, 0.866, 0.7031, -0.1345, 0.9138, 2.4509, 1.5091]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: -0.2911 rad (-16.68 deg)
+      Joint 1: 0.8660 rad (49.62 deg)
+      Joint 2: 0.7031 rad (40.28 deg)
+      Joint 3: -0.1345 rad (-7.71 deg)
+      Joint 4: 0.9138 rad (52.36 deg)
+      Joint 5: 2.4509 rad (140.43 deg)
+      Joint 6: 1.5091 rad (86.47 deg)
+    Attachments: {0: None}
+    Is Transition: False
+    Parent Orbit IDs: [126711742885920]
+  q6 (Configuration 5):
+    Joint Angles: [[0.0, -0.5, 0.0, -2.5, 0.0, 2.0, 0.8]]
+    Shape: (1, 7)
+    Robot 0:
+      Joint 0: 0.0000 rad (0.00 deg)
+      Joint 1: -0.5000 rad (-28.65 deg)
+      Joint 2: 0.0000 rad (0.00 deg)
+      Joint 3: -2.5000 rad (-143.24 deg)
+      Joint 4: 0.0000 rad (0.00 deg)
+      Joint 5: 2.0000 rad (114.59 deg)
+      Joint 6: 0.8000 rad (45.84 deg)
+    Attachments: {0: None}
+    Is Transition: False
+    Parent Orbit IDs: [126711742885920]
+

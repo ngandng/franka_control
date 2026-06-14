@@ -4,6 +4,7 @@ import time
 import sys
 import signal
 import math
+import threading
 
 import pylibfranka as franka
 from example_common import MotionGenerator, setDefaultBehaviour
@@ -14,6 +15,7 @@ ROBOT_IP = "172.16.0.2"
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0
 kStartJointTolerance = 0.05
+kGripperMoveSpeed = 0.1  # m/s
 
 motion_finished = False
 
@@ -107,9 +109,24 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     except Exception as e:
         print(f"Could not connect to robot: {e}")
         sys.exit(-1)
-    
+
+    # Connect gripper if the trajectory includes gripper state
+    gripper = None
+    if any("gripper" in step for step in trajectory):
+        try:
+            gripper = franka.Gripper(ROBOT_IP)
+        except Exception as e:
+            print(f"Could not connect to gripper: {e}")
+            sys.exit(-1)
+
     setDefaultBehaviour(robot)              # sets up baseline safety parameters
     move_robot_to_start_pose(robot, trajectory)
+
+    # Apply the initial gripper state before starting the arm control loop
+    if gripper is not None:
+        initial_width = trajectory[0].get("gripper")
+        if initial_width is not None:
+            gripper.move(initial_width, kGripperMoveSpeed)
 
 
     # Configure the Asynchronous Safe Controller 
@@ -127,6 +144,8 @@ def run_hardware_execution(filename="path_data/example_path.json"):
 
     print("Pre-flight check passed. Starting execution in 3s... Hold the E-Stop!")
     time.sleep(3)
+
+    last_gripper_width = trajectory[0].get("gripper") if gripper is not None else None
 
     try:
         for step_data in trajectory:
@@ -149,6 +168,17 @@ def run_hardware_execution(filename="path_data/example_path.json"):
             if command_result.error_message is not None:
                 print(f"Hardware rejected target: {command_result.error_message}")
                 sys.exit(-1)
+
+            # Fire a non-blocking gripper command whenever the width changes
+            if gripper is not None:
+                new_width = step_data.get("gripper")
+                if new_width is not None and new_width != last_gripper_width:
+                    threading.Thread(
+                        target=gripper.move,
+                        args=(new_width, kGripperMoveSpeed),
+                        daemon=True
+                    ).start()
+                    last_gripper_width = new_width
 
             sleep_time = time_step - (time.monotonic() - loop_start)
             if sleep_time > 0:

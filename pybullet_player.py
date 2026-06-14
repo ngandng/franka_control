@@ -9,7 +9,7 @@ import time
 home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]
 
 
-def run_simulation_check(filename="path_data/example_path.json"):
+def run_simulation_check(filename="path_data/trajectory_from_planned_path.json"):
     # Setup standard PyBullet physics server
     p.connect(p.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -33,7 +33,8 @@ def run_simulation_check(filename="path_data/example_path.json"):
                           basePosition=robot_base_position,
                           baseOrientation=p.getQuaternionFromEuler([0, 0, 0]), 
                           useFixedBase=True)
-    franka_joint_indices = [0, 1, 2, 3, 4, 5, 6] 
+    franka_joint_indices = [0, 1, 2, 3, 4, 5, 6]
+    franka_finger_indices = [9, 10]  # left and right finger joints; each = half the gripper width
     for i, joint_angle in zip(franka_joint_indices, home_q):
         p.resetJointState(robot_id, i, joint_angle)             # reset robot to neutral home pose
 
@@ -49,7 +50,7 @@ def run_simulation_check(filename="path_data/example_path.json"):
         start_time = time.monotonic()
         
         target_joints = step_data["joints"]
-        
+
         # Command PyBullet's position controllers to match the file
         p.setJointMotorControlArray(
             bodyUniqueId=robot_id,
@@ -57,7 +58,18 @@ def run_simulation_check(filename="path_data/example_path.json"):
             controlMode=p.POSITION_CONTROL,
             targetPositions=target_joints
         )
-        
+
+        # Set gripper finger positions if the trajectory includes gripper state.
+        # Each finger joint = half the total gripper width.
+        if "gripper" in step_data:
+            finger_pos = step_data["gripper"] / 2.0
+            p.setJointMotorControlArray(
+                bodyUniqueId=robot_id,
+                jointIndices=franka_finger_indices,
+                controlMode=p.POSITION_CONTROL,
+                targetPositions=[finger_pos, finger_pos]
+            )
+
         p.stepSimulation()
         
         # Maintain uniform playback timing (50Hz / 20ms)

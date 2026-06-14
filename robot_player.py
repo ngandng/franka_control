@@ -16,7 +16,7 @@ home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]        # franka arm neutral pose
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0
 kStartJointTolerance = 0.05
-kGripperMoveSpeed = 0.2                         # m/s
+kGripperMoveSpeed = 0.1                         # m/s
 
 motion_finished = False
 
@@ -200,7 +200,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                 print(f"Error in feedback: {target_feedback.error_message}")
                 sys.exit(-1)
 
-            # FIX: skip arm command for gripper-only waypoints (joints=null)
+            # Arm control
             joints = step_data.get("joints")
             if joints is not None:
                 next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
@@ -211,7 +211,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                     print(f"Hardware rejected target: {command_result.error_message}")
                     sys.exit(-1)
 
-            # Gripper action — wait for previous action to finish before starting new one
+            # Gripper control
             if gripper is not None:
                 new_width = step_data.get("gripper")
                 if new_width is not None and new_width != last_gripper_width:

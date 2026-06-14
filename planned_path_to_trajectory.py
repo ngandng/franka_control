@@ -13,6 +13,8 @@ TIME_STEP          = 0.020      # 50 Hz
 SECS_PER_WAYPOINT  = 2.0        # seconds to travel between two configurations
 GRIPPER_ACTION_SEC = 1.0        # seconds spent opening / closing gripper
 MAX_ALLOWED_VELOCITY = 0.5      # rad/s
+MAX_DEGREES_PER_STEP = 0.5      # max joint movement per 20ms step (degrees)
+MAX_RAD_PER_STEP = np.deg2rad(MAX_DEGREES_PER_STEP)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,11 +83,24 @@ def gripper_state(cfg: dict) -> float:
 # 3.  Build trajectory waypoints
 # ─────────────────────────────────────────────────────────────────────────────
 
-def interpolate(q_start, q_end, gripper, steps: int, t_start: float) -> list[dict]:
-    """Linear interpolation between two joint configs, fixed gripper."""
+# def interpolate(q_start, q_end, gripper, steps: int, t_start: float) -> list[dict]:
+#     """Linear interpolation between two joint configs, fixed gripper."""
+#     waypoints = []
+#     for i in range(steps):
+#         alpha = i / max(steps - 1, 1)
+#         q = [s + alpha * (e - s) for s, e in zip(q_start, q_end)]
+#         waypoints.append({
+#             "time":    round(t_start + i * TIME_STEP, 4),
+#             "joints":  [round(v, 5) for v in q],
+#             "gripper": round(gripper, 5),
+#         })
+#     return waypoints
+
+def interpolate(q_start, q_end, gripper, steps, t_start):
     waypoints = []
     for i in range(steps):
-        alpha = i / max(steps - 1, 1)
+        # Cosine easing: slow start, fast middle, slow end
+        alpha = (1 - np.cos(np.pi * i / max(steps - 1, 1))) / 2
         q = [s + alpha * (e - s) for s, e in zip(q_start, q_end)]
         waypoints.append({
             "time":    round(t_start + i * TIME_STEP, 4),
@@ -137,22 +152,17 @@ def build_trajectory(configurations: list[dict]) -> list[dict]:
 
 
         # ── 3a. Move arm from prev to current ─────────────────────────────
-        # Calculate the absolute furthest distance any single joint has to travel
         joint_deltas = np.abs(np.array(joints) - np.array(prev_joints))
         max_joint_delta = np.max(joint_deltas)
 
-        # Dynamically calculate how many seconds this specific movement actually needs
-        # Time = Distance / Velocity
-        required_seconds = max_joint_delta / MAX_ALLOWED_VELOCITY
-        
-        # Ensure it takes at least your default time, but scales up for long distances
-        segment_duration = max(SECS_PER_WAYPOINT, required_seconds)
+        # Steps based on resolution: how many steps to keep each step ≤ MAX_RAD_PER_STEP
+        resolution_steps = int(np.ceil(max_joint_delta / MAX_RAD_PER_STEP))
 
-        # Calculate steps based on the safe, dynamic duration
-        move_steps = max(2, int(segment_duration / TIME_STEP))
-        
-        move_wps   = interpolate(prev_joints, joints, prev_gripper,
-                                 move_steps, t)
+        # Never fewer than 2 steps, never fewer than minimum duration
+        min_steps = max(2, int(SECS_PER_WAYPOINT / TIME_STEP))
+        move_steps = max(min_steps, resolution_steps)
+
+        move_wps = interpolate(prev_joints, joints, prev_gripper, move_steps, t)
         move_wps[0]["event"] = f"MOVE {prev_cfg['name']} -> {cfg['name']}"
         trajectory.extend(move_wps)
         t += move_steps * TIME_STEP

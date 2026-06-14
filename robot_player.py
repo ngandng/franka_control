@@ -1,4 +1,3 @@
-
 import json
 import time
 import sys
@@ -12,10 +11,12 @@ from example_common import MotionGenerator, setDefaultBehaviour
 
 ROBOT_IP = "172.16.0.2"
 
+home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]        # franka arm neutral pose
+
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0
 kStartJointTolerance = 0.05
-kGripperMoveSpeed = 0.1  # m/s
+kGripperMoveSpeed = 0.2  # m/s
 
 motion_finished = False
 
@@ -32,6 +33,8 @@ def validate_trajectory(trajectory):
 
     for index, step_data in enumerate(trajectory):
         joints = step_data.get("joints")
+        if joints is None:
+            continue  # gripper-only waypoint, allowed
         if not isinstance(joints, list) or len(joints) != 7:
             raise ValueError(f"Waypoint {index} must contain 7 joint values.")
 
@@ -58,7 +61,9 @@ def assert_robot_is_at_start(robot, trajectory, tolerance=kStartJointTolerance):
         )
 
 
+
 def move_robot_to_start_pose(robot, trajectory, tolerance=kStartJointTolerance):
+
     start_joints = trajectory[0]["joints"]
     robot_state = robot.read_once()
     current_joints = list(robot_state.q)
@@ -74,33 +79,48 @@ def move_robot_to_start_pose(robot, trajectory, tolerance=kStartJointTolerance):
         f"({math.degrees(max_joint_error):.2f} deg)."
     )
 
-    motion_generator = MotionGenerator(speed_factor=0.1, q_goal=start_joints)
+    # Use the same async position controller as the main loop
+    joint_config = franka.AsyncPositionControlHandler.Configuration(
+        maximum_joint_velocities=kDefaultMaximumVelocities,
+        goal_tolerance=kDefaultGoalTolerance
+    )
+    result = franka.AsyncPositionControlHandler.configure(robot, joint_config)
+    if result.error_message is not None:
+        raise RuntimeError(f"Failed to configure controller for start pose: {result.error_message}")
 
-    def move_to_start_callback(robot_state, duration):
-        if motion_finished:
-            output = franka.JointPositions(list(robot_state.q))
-            output.motion_finished = True
-            return output
+    handler = result.handler
 
-        duration_sec = duration.to_sec() if hasattr(duration, "to_sec") else float(duration)
-        return motion_generator(robot_state, duration_sec)
-
+    # Interpolate slowly from current to start joints
+    steps = 1000  # 20 seconds at 50Hz — slow and safe
     try:
-        robot.control(move_to_start_callback)
-    except Exception as exc:
-        raise RuntimeError(f"Failed to move robot to the trajectory start pose: {exc}") from exc
+        for i in range(steps):
+            if motion_finished:
+                break
+            loop_start = time.monotonic()
+            alpha = i / max(steps - 1, 1)
+            target = [c + alpha * (s - c) for c, s in zip(current_joints, start_joints)]
+            next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
+                joint_positions=target
+            )
+            command_result = handler.set_joint_position_target(next_target)
+            if command_result.error_message is not None:
+                raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
+            sleep_time = 0.020 - (time.monotonic() - loop_start)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+    finally:
+        handler.stop_control()
 
     assert_robot_is_at_start(robot, trajectory, tolerance=tolerance)
 
 
 def run_hardware_execution(filename="path_data/example_path.json"):
 
-    # load the path file
+    # Load the path file
     with open(filename, 'r') as f:
         trajectory = json.load(f)
 
     validate_trajectory(trajectory)
-
 
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -119,7 +139,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
             print(f"Could not connect to gripper: {e}")
             sys.exit(-1)
 
-    setDefaultBehaviour(robot)              # sets up baseline safety parameters
+    setDefaultBehaviour(robot)
     move_robot_to_start_pose(robot, trajectory)
 
     # Apply the initial gripper state before starting the arm control loop
@@ -128,24 +148,25 @@ def run_hardware_execution(filename="path_data/example_path.json"):
         if initial_width is not None:
             gripper.move(initial_width, kGripperMoveSpeed)
 
-
-    # Configure the Asynchronous Safe Controller 
+    # Configure the Asynchronous Safe Controller
     joint_config = franka.AsyncPositionControlHandler.Configuration(
         maximum_joint_velocities=kDefaultMaximumVelocities,
         goal_tolerance=kDefaultGoalTolerance
     )
     result = franka.AsyncPositionControlHandler.configure(robot, joint_config)
     if result.error_message is not None:
-        print(result.error_message); sys.exit(-1)
-        
+        print(result.error_message)
+        sys.exit(-1)
+
     position_control_handler = result.handler
 
-    time_step = 0.020  # 50 Hz matching your planner file
+    time_step = 0.020  # 50 Hz matching trajectory file
 
     print("Pre-flight check passed. Starting execution in 3s... Hold the E-Stop!")
     time.sleep(3)
 
     last_gripper_width = trajectory[0].get("gripper") if gripper is not None else None
+    gripper_thread = None  # track gripper thread to join before next action
 
     try:
         for step_data in trajectory:
@@ -160,33 +181,43 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                 print(f"Error in feedback: {target_feedback.error_message}")
                 sys.exit(-1)
 
-            next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
-                joint_positions=step_data["joints"]
-            )
+            # FIX: skip arm command for gripper-only waypoints (joints=null)
+            joints = step_data.get("joints")
+            if joints is not None:
+                next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
+                    joint_positions=joints
+                )
+                command_result = position_control_handler.set_joint_position_target(next_target)
+                if command_result.error_message is not None:
+                    print(f"Hardware rejected target: {command_result.error_message}")
+                    sys.exit(-1)
 
-            command_result = position_control_handler.set_joint_position_target(next_target)
-            if command_result.error_message is not None:
-                print(f"Hardware rejected target: {command_result.error_message}")
-                sys.exit(-1)
-
-            # Fire a non-blocking gripper command whenever the width changes
+            # Gripper action — wait for previous action to finish before starting new one
             if gripper is not None:
                 new_width = step_data.get("gripper")
                 if new_width is not None and new_width != last_gripper_width:
-                    threading.Thread(
+                    if gripper_thread is not None:
+                        gripper_thread.join()  # wait for previous gripper action
+                    gripper_thread = threading.Thread(
                         target=gripper.move,
-                        args=(new_width, kGripperMoveSpeed),
-                        daemon=True
-                    ).start()
+                        args=(new_width, kGripperMoveSpeed)
+                        # removed daemon=True so thread isn't killed mid-motion
+                    )
+                    gripper_thread.start()
                     last_gripper_width = new_width
 
             sleep_time = time_step - (time.monotonic() - loop_start)
             if sleep_time > 0:
                 time.sleep(sleep_time)
+
     finally:
+        # Wait for any in-progress gripper action to complete
+        if gripper_thread is not None:
+            gripper_thread.join()
         position_control_handler.stop_control()
 
     print("Execution complete.")
 
+
 if __name__ == "__main__":
-    run_hardware_execution()
+    run_hardware_execution(filename="path_data/trajectory_from_planned_path.json")

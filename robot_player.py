@@ -16,7 +16,7 @@ home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]        # franka arm neutral pose
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0
 kStartJointTolerance = 0.05
-kGripperMoveSpeed = 0.2  # m/s
+kGripperMoveSpeed = 0.2                         # m/s
 
 motion_finished = False
 
@@ -62,7 +62,7 @@ def assert_robot_is_at_start(robot, trajectory, tolerance=kStartJointTolerance):
 
 
 
-def move_robot_to_start_pose(robot, trajectory, tolerance=kStartJointTolerance):
+def move_robot_to_start_pose(robot, trajectory, controller, tolerance=kStartJointTolerance):
 
     start_joints = trajectory[0]["joints"]
     robot_state = robot.read_once()
@@ -79,16 +79,6 @@ def move_robot_to_start_pose(robot, trajectory, tolerance=kStartJointTolerance):
         f"({math.degrees(max_joint_error):.2f} deg)."
     )
 
-    # Use the same async position controller as the main loop
-    joint_config = franka.AsyncPositionControlHandler.Configuration(
-        maximum_joint_velocities=kDefaultMaximumVelocities,
-        goal_tolerance=kDefaultGoalTolerance
-    )
-    result = franka.AsyncPositionControlHandler.configure(robot, joint_config)
-    if result.error_message is not None:
-        raise RuntimeError(f"Failed to configure controller for start pose: {result.error_message}")
-
-    handler = result.handler
 
     # Interpolate slowly from current to start joints
     steps = 1000  # 20 seconds at 50Hz — slow and safe
@@ -96,32 +86,43 @@ def move_robot_to_start_pose(robot, trajectory, tolerance=kStartJointTolerance):
         for i in range(steps):
             if motion_finished:
                 break
+
+            # Read feedback to check for errors
+            target_feedback = controller.get_target_feedback()
+            if target_feedback.error_message is not None:
+                raise RuntimeError(f"Error in feedback during start pose move: {target_feedback.error_message}")
+            
+            # Interpolate each joint linearly towards the start pose
             loop_start = time.monotonic()
             alpha = i / max(steps - 1, 1)
             target = [c + alpha * (s - c) for c, s in zip(current_joints, start_joints)]
             next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
                 joint_positions=target
-            )
-            command_result = handler.set_joint_position_target(next_target)
+            )   # safety filters for the position control handler
+            command_result = controller.set_joint_position_target(next_target)
+
             if command_result.error_message is not None:
                 raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
             sleep_time = 0.020 - (time.monotonic() - loop_start)
             if sleep_time > 0:
                 time.sleep(sleep_time)
     finally:
-        handler.stop_control()
+        controller.stop_control()
 
     assert_robot_is_at_start(robot, trajectory, tolerance=tolerance)
 
 
 def run_hardware_execution(filename="path_data/example_path.json"):
 
-    # Load the path file
+    #=========== LOAD THE FILE =================
     with open(filename, 'r') as f:
         trajectory = json.load(f)
 
     validate_trajectory(trajectory)
 
+
+
+    # ===== SETUP ROBOT CONFIGURATION AND SAFETY =======
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
@@ -140,7 +141,25 @@ def run_hardware_execution(filename="path_data/example_path.json"):
             sys.exit(-1)
 
     setDefaultBehaviour(robot)
-    move_robot_to_start_pose(robot, trajectory)
+
+
+
+    # =========== CONFIGURE THE SAFE CONTROLLER ================
+    joint_position_control_configuration = \
+        franka.AsyncPositionControlHandler.Configuration(
+            maximum_joint_velocities=kDefaultMaximumVelocities,
+            goal_tolerance=kDefaultGoalTolerance
+    )
+    result = franka.AsyncPositionControlHandler.configure(
+        robot, 
+        joint_position_control_configuration
+        )
+    if result.error_message is not None:
+        print(result.error_message)
+        sys.exit(-1)
+
+    position_control_handler = result.handler
+    target_feedback = position_control_handler.get_target_feedback()
 
     # Apply the initial gripper state before starting the arm control loop
     if gripper is not None:
@@ -148,18 +167,18 @@ def run_hardware_execution(filename="path_data/example_path.json"):
         if initial_width is not None:
             gripper.move(initial_width, kGripperMoveSpeed)
 
-    # Configure the Asynchronous Safe Controller
-    joint_config = franka.AsyncPositionControlHandler.Configuration(
-        maximum_joint_velocities=kDefaultMaximumVelocities,
-        goal_tolerance=kDefaultGoalTolerance
+
+
+    # =========== MOVE ROBOT TO START POSE ================
+    move_robot_to_start_pose(
+        robot, 
+        trajectory,
+        position_control_handler
     )
-    result = franka.AsyncPositionControlHandler.configure(robot, joint_config)
-    if result.error_message is not None:
-        print(result.error_message)
-        sys.exit(-1)
 
-    position_control_handler = result.handler
 
+
+    # =========== MAIN EXECUTION LOOP ================
     time_step = 0.020  # 50 Hz matching trajectory file
 
     print("Pre-flight check passed. Starting execution in 3s... Hold the E-Stop!")

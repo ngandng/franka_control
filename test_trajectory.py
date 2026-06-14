@@ -82,8 +82,10 @@ def main():
             goal_tolerance=kDefaultGoalTolerance
         )   # safety filters for the position control handler
 
-    result = franka.AsyncPositionControlHandler.configure(robot,
-                                                   joint_position_control_configuration)
+    result = franka.AsyncPositionControlHandler.configure(
+        robot,
+        joint_position_control_configuration
+    )
 
     if result.error_message is not None:
         print(result.error_message)

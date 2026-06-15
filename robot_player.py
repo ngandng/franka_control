@@ -171,7 +171,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
         trajectory,
         position_control_handler
     )
-
+    time.sleep(2.0)
 
 
     # =========== MAIN EXECUTION LOOP ================
@@ -219,7 +219,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                         print(f"Grasp detected in file ({last_gripper_width}m -> {new_width}m). Squeezing...")
                         # Squeeze using the target width from the file
                         gripper.grasp(
-                            target_width=new_width, 
+                            width=new_width, 
                             speed=kGripperMoveSpeed, 
                             force=kGripperForce
                         )

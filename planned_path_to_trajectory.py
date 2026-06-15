@@ -228,5 +228,5 @@ def generate_trajectory_from_planned_path(
 
 if __name__ == "__main__":
     generate_trajectory_from_planned_path(
-        input_txt="planned_path_seed_44_1r_1o.txt",
+        input_txt="simple_pick_place_planned_path_seed_44.txt",
     )

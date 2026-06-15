@@ -15,7 +15,7 @@ import threading
 from datetime import timedelta
 
 import pylibfranka as franka
-from example_common import setDefaultBehaviour
+from pylibfranka_examples.example_common import setDefaultBehaviour
 
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0

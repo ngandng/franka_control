@@ -6,17 +6,19 @@ import math
 import threading
 
 import pylibfranka as franka
-from example_common import MotionGenerator, setDefaultBehaviour
+from pylibfranka_examples.example_common import MotionGenerator, setDefaultBehaviour
 
 
 ROBOT_IP = "172.16.0.2"
 
+GRIPPER_THRESHOLD = 0.002                       # 2mm buffer to ignore minor floating-point noise
 home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]        # franka arm neutral pose
 
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0
 kStartJointTolerance = 0.05
 kGripperMoveSpeed = 0.1                         # m/s
+kGripperForce = 60.0                            # N
 
 motion_finished = False
 
@@ -133,12 +135,12 @@ def run_hardware_execution(filename="path_data/example_path.json"):
 
     # Connect gripper if the trajectory includes gripper state
     gripper = None
-    if any("gripper" in step for step in trajectory):
-        try:
-            gripper = franka.Gripper(ROBOT_IP)
-        except Exception as e:
-            print(f"Could not connect to gripper: {e}")
-            sys.exit(-1)
+    try:
+        gripper = franka.Gripper(ROBOT_IP)
+        gripper.homing()
+    except Exception as e:
+        print(f"Could not connect to gripper: {e}")
+        sys.exit(-1)
 
     setDefaultBehaviour(robot)
 
@@ -160,12 +162,6 @@ def run_hardware_execution(filename="path_data/example_path.json"):
 
     position_control_handler = result.handler
     target_feedback = position_control_handler.get_target_feedback()
-
-    # Apply the initial gripper state before starting the arm control loop
-    if gripper is not None:
-        initial_width = trajectory[0].get("gripper")
-        if initial_width is not None:
-            gripper.move(initial_width, kGripperMoveSpeed)
 
 
 
@@ -200,7 +196,8 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                 print(f"Error in feedback: {target_feedback.error_message}")
                 sys.exit(-1)
 
-            # Arm control
+
+            #====== ARM CONTROL =======
             joints = step_data.get("joints")
             if joints is not None:
                 next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
@@ -211,20 +208,35 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                     print(f"Hardware rejected target: {command_result.error_message}")
                     sys.exit(-1)
 
-            # Gripper control
+
+            #====== GRIPPER CONTROL =======
             if gripper is not None:
                 new_width = step_data.get("gripper")
-                if new_width is not None and new_width != last_gripper_width:
-                    if gripper_thread is not None:
-                        gripper_thread.join()  # wait for previous gripper action
-                    gripper_thread = threading.Thread(
-                        target=gripper.move,
-                        args=(new_width, kGripperMoveSpeed)
-                        # removed daemon=True so thread isn't killed mid-motion
-                    )
-                    gripper_thread.start()
-                    last_gripper_width = new_width
+                
+                if new_width is not None:
+                    # Check if the file is commanding the gripper to close/grasp
+                    if new_width < (last_gripper_width - GRIPPER_THRESHOLD):
+                        print(f"Grasp detected in file ({last_gripper_width}m -> {new_width}m). Squeezing...")
+                        # Squeeze using the target width from the file
+                        gripper.grasp(
+                            target_width=new_width, 
+                            speed=kGripperMoveSpeed, 
+                            force=kGripperForce,
+                            epsilon_inner=0.005,
+                            epsilon_outer=0.005
+                        )
+                        last_gripper_width = new_width
+                        loop_start = time.monotonic()   # CRITICAL: Reset the loop timer so the arm doesn't trip on a lag fault
 
+                    # Check if the file is commanding the gripper to open back up
+                    elif new_width > (last_gripper_width + GRIPPER_THRESHOLD):
+                        print(f"Open detected in file ({last_gripper_width}m -> {new_width}m). Opening...")
+                        gripper.move(new_width, kGripperMoveSpeed)
+                        last_gripper_width = new_width
+                        loop_start = time.monotonic()   # CRITICAL: Reset the loop timer here as well
+
+
+            # ====== TIMING REGULATION ======
             sleep_time = time_step - (time.monotonic() - loop_start)
             if sleep_time > 0:
                 time.sleep(sleep_time)

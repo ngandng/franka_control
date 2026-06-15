@@ -11,9 +11,9 @@ GRIPPER_CLOSED = 0.04   # metres (half closed)
 # ── Interpolation settings ────────────────────────────────────────────────────
 TIME_STEP          = 0.020      # 50 Hz
 SECS_PER_WAYPOINT  = 2.0        # seconds to travel between two configurations
-GRIPPER_ACTION_SEC = 1.0        # seconds spent opening / closing gripper
-MAX_ALLOWED_VELOCITY = 0.5      # rad/s
-MAX_DEGREES_PER_STEP = 0.5      # max joint movement per 20ms step (degrees)
+GRIPPER_ACTION_SEC = 0.2        # seconds spent opening / closing gripper
+MAX_ALLOWED_VELOCITY = 0.3      # rad/s
+MAX_DEGREES_PER_STEP = 0.3      # max joint movement per 20ms step (degrees)
 MAX_RAD_PER_STEP = np.deg2rad(MAX_DEGREES_PER_STEP)
 
 

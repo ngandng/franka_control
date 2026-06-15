@@ -12,7 +12,7 @@ from pylibfranka import Gripper
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ip", type=str, required=True, help="Robot IP address")
+    parser.add_argument("--ip", type=str, default="172.16.0.2", help="Robot IP address")
     parser.add_argument("--width", type=float, default=0.005, help="Object width to grasp")
     parser.add_argument(
         "--homing", type=int, default=1, choices=[0, 1], help="Perform homing (0 or 1)"

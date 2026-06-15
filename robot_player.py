@@ -221,9 +221,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                         gripper.grasp(
                             target_width=new_width, 
                             speed=kGripperMoveSpeed, 
-                            force=kGripperForce,
-                            epsilon_inner=0.005,
-                            epsilon_outer=0.005
+                            force=kGripperForce
                         )
                         last_gripper_width = new_width
                         loop_start = time.monotonic()   # CRITICAL: Reset the loop timer so the arm doesn't trip on a lag fault

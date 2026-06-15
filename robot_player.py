@@ -171,7 +171,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
         trajectory,
         position_control_handler
     )
-    time.sleep(2.0)
+    time.sleep(0.5)
 
 
     # =========== MAIN EXECUTION LOOP ================
@@ -215,20 +215,8 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                 
                 if new_width is not None:
                     # Check if the file is commanding the gripper to close/grasp
-                    if new_width < (last_gripper_width - GRIPPER_THRESHOLD):
-                        print(f"Grasp detected in file ({last_gripper_width}m -> {new_width}m). Squeezing...")
-                        # Squeeze using the target width from the file
-                        gripper.grasp(
-                            width=new_width, 
-                            speed=kGripperMoveSpeed, 
-                            force=kGripperForce
-                        )
-                        last_gripper_width = new_width
-                        loop_start = time.monotonic()   # CRITICAL: Reset the loop timer so the arm doesn't trip on a lag fault
-
-                    # Check if the file is commanding the gripper to open back up
-                    elif new_width > (last_gripper_width + GRIPPER_THRESHOLD):
-                        print(f"Open detected in file ({last_gripper_width}m -> {new_width}m). Opening...")
+                    if abs(new_width - last_gripper_width) > GRIPPER_THRESHOLD:
+                        print(f"Gripper action detected in file ({last_gripper_width}m -> {new_width}m). Moving gripper...")
                         gripper.move(new_width, kGripperMoveSpeed)
                         last_gripper_width = new_width
                         loop_start = time.monotonic()   # CRITICAL: Reset the loop timer here as well

@@ -11,7 +11,7 @@ GRIPPER_CLOSED = 0.04   # metres (half closed)
 # ── Interpolation settings ────────────────────────────────────────────────────
 TIME_STEP          = 0.020      # 50 Hz
 SECS_PER_WAYPOINT  = 2.0        # seconds to travel between two configurations
-GRIPPER_ACTION_SEC = 0.2        # seconds spent opening / closing gripper
+GRIPPER_ACTION_SEC = 1.0        # seconds spent opening / closing gripper
 MAX_ALLOWED_VELOCITY = 0.3      # rad/s
 MAX_DEGREES_PER_STEP = 0.3      # max joint movement per 20ms step (degrees)
 MAX_RAD_PER_STEP = np.deg2rad(MAX_DEGREES_PER_STEP)
@@ -33,6 +33,17 @@ def parse_planned_path(filepath: str) -> list[dict]:
     """
     with open(filepath) as f:
         text = f.read()
+
+    # Map each configuration name (q1, q2, ...) to its orbit-level Robot State.
+    # This drives gripper transitions: TRANSIT->TRANSFER closes, TRANSFER->TRANSIT opens.
+    config_robot_state = {}
+    orbit_blocks = re.finditer(r'(Orbit\d+:.*?)(?=\nOrbit\d+:|\Z)', text, re.DOTALL)
+    for orbit_match in orbit_blocks:
+        orbit_block = orbit_match.group(1)
+        state_match = re.search(r"Robot States:\s*\{0:\s*'([^']+)'\}", orbit_block)
+        robot_state = state_match.group(1) if state_match else None
+        for cfg_name in re.findall(r'\n\s*(q\d+)\s+\(Configuration\s+\d+\):', orbit_block):
+            config_robot_state[cfg_name] = robot_state
 
     # Split on configuration headers  ── q1, q2, …
     blocks = re.split(r'\n  (q\d+) \(Configuration \d+\):', text)
@@ -62,6 +73,7 @@ def parse_planned_path(filepath: str) -> list[dict]:
             "joints":        joints,
             "attachments":   raw_attach,
             "is_transition": is_trans,
+            "robot_state":   config_robot_state.get(name),
         })
 
     return configurations
@@ -71,12 +83,12 @@ def parse_planned_path(filepath: str) -> list[dict]:
 # 2.  Determine gripper state at each configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gripper_state(cfg: dict) -> float:
-    """Open if no object attached, closed otherwise."""
-    for robot_id, obj_id in cfg["attachments"].items():
-        if obj_id is not None:
-            return GRIPPER_CLOSED
-    return GRIPPER_OPEN
+def gripper_for_robot_state(robot_state: str | None, current_gripper: float) -> float:
+    if robot_state == "TRANSFER":
+        return GRIPPER_CLOSED
+    if robot_state == "TRANSIT":
+        return GRIPPER_OPEN
+    return current_gripper
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,13 +123,13 @@ def interpolate(q_start, q_end, gripper, steps, t_start):
 
 
 def gripper_transition(gripper_from, gripper_to, t_start: float) -> list[dict]:
-    """Hold joints still, animate gripper open/close."""
+    """Hold joints still and switch gripper target once, then hold it."""
     # We don't know arm joints here — caller patches them in
     steps = max(1, int(GRIPPER_ACTION_SEC / TIME_STEP))
     waypoints = []
     for i in range(steps):
-        alpha = i / max(steps - 1, 1)
-        g = gripper_from + alpha * (gripper_to - gripper_from)
+        # One command edge, then hold to avoid repeated open/close triggers.
+        g = gripper_to
         waypoints.append({
             "time":    round(t_start + i * TIME_STEP, 4),
             "joints":  None,   # filled by caller
@@ -129,11 +141,15 @@ def gripper_transition(gripper_from, gripper_to, t_start: float) -> list[dict]:
 def build_trajectory(configurations: list[dict]) -> list[dict]:
     trajectory = []
     t = 0.0
+    current_gripper = gripper_for_robot_state(
+        configurations[0].get("robot_state") if configurations else None,
+        GRIPPER_OPEN,
+    )
 
     for idx in range(len(configurations)):
         cfg      = configurations[idx]
         joints   = cfg["joints"]
-        gripper  = gripper_state(cfg)
+        gripper  = current_gripper
 
         if idx == 0:
             # First waypoint — just hold home pose
@@ -148,7 +164,24 @@ def build_trajectory(configurations: list[dict]) -> list[dict]:
 
         prev_cfg    = configurations[idx - 1]
         prev_joints = prev_cfg["joints"]
-        prev_gripper = gripper_state(prev_cfg)
+        prev_gripper = current_gripper
+
+        prev_robot_state = prev_cfg.get("robot_state")
+        curr_robot_state = cfg.get("robot_state")
+        if prev_robot_state != curr_robot_state:
+            current_gripper = gripper_for_robot_state(curr_robot_state, current_gripper)
+        gripper = current_gripper
+
+        # Do gripper transitions before moving toward the next configuration.
+        # Trigger strictly on Robot State changes, independent of Is Transition.
+        if gripper != prev_gripper:
+            action = "CLOSE GRIPPER" if gripper == GRIPPER_CLOSED else "OPEN GRIPPER"
+            g_wps = gripper_transition(prev_gripper, gripper, t)
+            for wp in g_wps:
+                wp["joints"] = [round(v, 5) for v in prev_joints]  # hold current pose while gripper changes
+            g_wps[0]["event"] = f"{action} AT {prev_cfg['name']} (BEFORE {cfg['name']})"
+            trajectory.extend(g_wps)
+            t += GRIPPER_ACTION_SEC
 
 
         # ── 3a. Move arm from prev to current ─────────────────────────────
@@ -162,21 +195,10 @@ def build_trajectory(configurations: list[dict]) -> list[dict]:
         min_steps = max(2, int(SECS_PER_WAYPOINT / TIME_STEP))
         move_steps = max(min_steps, resolution_steps)
 
-        move_wps = interpolate(prev_joints, joints, prev_gripper, move_steps, t)
+        move_wps = interpolate(prev_joints, joints, gripper, move_steps, t)
         move_wps[0]["event"] = f"MOVE {prev_cfg['name']} -> {cfg['name']}"
         trajectory.extend(move_wps)
         t += move_steps * TIME_STEP
-
-
-        # ── 3b. Gripper action at transition configurations ────────────────
-        if cfg["is_transition"] and gripper != prev_gripper:
-            action   = "CLOSE GRIPPER" if gripper == GRIPPER_CLOSED else "OPEN GRIPPER"
-            g_wps    = gripper_transition(prev_gripper, gripper, t)
-            for wp in g_wps:
-                wp["joints"] = [round(v, 5) for v in joints]  # hold position
-            g_wps[0]["event"] = f"{action} @ {cfg['name']}"
-            trajectory.extend(g_wps)
-            t += GRIPPER_ACTION_SEC
 
     return trajectory
 
@@ -198,15 +220,18 @@ def generate_trajectory_from_planned_path(
     # Deduplicate consecutive identical configs (transition configs appear in two orbits)
     deduped = [configurations[0]]
     for cfg in configurations[1:]:
-        if cfg["joints"] != deduped[-1]["joints"]:
+        if (
+            cfg["joints"] != deduped[-1]["joints"]
+            or cfg.get("robot_state") != deduped[-1].get("robot_state")
+        ):
             deduped.append(cfg)
     configurations = deduped
 
     print(f"Found {len(configurations)} configurations:")
     for cfg in configurations:
-        g = "CLOSED" if gripper_state(cfg) == GRIPPER_CLOSED else "OPEN"
+        g = "CLOSED" if gripper_for_robot_state(cfg.get("robot_state"), GRIPPER_OPEN) == GRIPPER_CLOSED else "OPEN"
         print(f"  {cfg['name']:4s}  joints={cfg['joints']}  "
-              f"gripper={g}  transition={cfg['is_transition']}")
+              f"robot_state={cfg.get('robot_state')}  gripper={g}  transition={cfg['is_transition']}")
 
     trajectory = build_trajectory(configurations)
 

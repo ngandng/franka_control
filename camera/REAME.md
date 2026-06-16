@@ -30,6 +30,10 @@ Verify installation
 realsense-viewer
 ```
 
+## Installation on Ubuntu 26
+
+same as above
+
 ## Inside our project code
 ```
 source .venv/bin/activate

@@ -4,9 +4,12 @@ import sys
 import signal
 import math
 import threading
+import numpy as np
 
 import pylibfranka as franka
 from pylibfranka_examples.example_common import MotionGenerator, setDefaultBehaviour
+
+from realsense_module import RealSenseTracker, get_object_in_world_frame
 
 
 ROBOT_IP = "172.16.0.2"
@@ -144,7 +147,27 @@ def run_hardware_execution(filename="path_data/example_path.json"):
 
     setDefaultBehaviour(robot)
 
+    # =========== CAMERA SETUP ================
+    print("\nSetting up RealSense camera for tracking...")
+    try:
+        tracker = RealSenseTracker()
+        print("Camera setup complete. Starting execution in 3s...")
+        time.sleep(3)
+    except Exception as e:
+        print(f"Failed to initialize RealSense camera: {e}")
+        sys.exit(-1)
 
+    T_flange_to_camera = tracker.T_flange_to_camera
+    robot_state = robot.read_once()
+    T_base_to_flange = np.array(robot_state.O_T_EE).reshape((4, 4), order='F')
+
+    # --- Usage inside your vision loop ---
+    # camera_xyz = [x_c, y_c, z_c] # Pulled from your rs2_deproject_pixel_to_point function
+    camera_xyz = tracker.get_object_camera_xyz()
+    object_world_xyz = get_object_in_world_frame(camera_xyz, T_base_to_flange, T_flange_to_camera)
+
+    print(f"🌍 Real-World Workspace Position: {object_world_xyz}")
+    return
 
     # =========== CONFIGURE THE SAFE CONTROLLER ================
     joint_position_control_configuration = \

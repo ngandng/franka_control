@@ -203,6 +203,12 @@ def get_object_in_world_frame(camera_xyz, T_base_to_flange, T_flange_to_camera):
     
     # 3. Transform from Wrist Flange Frame -> Robot Base Frame
     P_base = np.dot(T_base_to_flange, P_flange)
+
+    P_base = P_base.flatten()  # Convert from 4x1 to 1D array for easier access
+
+    # print(f"Debug: P_camera = {P_camera}")
+    # print(f"Debug: P_flange = {P_flange}")
+    # print(f"Debug: P_base = {P_base}")
     
     # 4. Extract the clean real-world X, Y, Z coordinates (in meters)
     world_x = float(P_base[0])

@@ -164,6 +164,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     # --- Usage inside your vision loop ---
     # camera_xyz = [x_c, y_c, z_c] # Pulled from your rs2_deproject_pixel_to_point function
     camera_xyz = tracker.get_object_camera_xyz()
+    print(f"📷 Camera Frame Position: {camera_xyz}")
     object_world_xyz = get_object_in_world_frame(camera_xyz, T_base_to_flange, T_flange_to_camera)
 
     print(f"🌍 Real-World Workspace Position: {object_world_xyz}")

@@ -1,5 +1,7 @@
 import math
 import time
+import ast
+from pathlib import Path
 import numpy as np
 import cv2
 # from camera_utils import setup_camera_pipeline
@@ -56,29 +58,26 @@ def move_robot_to_pose(robot, target_joints, controller, tolerance):
 
     # Interpolate slowly from current to target joints
     steps = 1000  # 20 seconds at 50Hz — slow and safe
-    try:
-        for i in range(steps):
-            # Read feedback to check for errors
-            target_feedback = controller.get_target_feedback()
-            if target_feedback.error_message is not None:
-                raise RuntimeError(f"Error in feedback during target pose move: {target_feedback.error_message}")
-            
-            # Interpolate each joint linearly towards the target pose
-            loop_start = time.monotonic()
-            alpha = i / max(steps - 1, 1)
-            target = [c + alpha * (s - c) for c, s in zip(current_joints, target_joints)]
-            next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
-                joint_positions=target
-            )   # safety filters for the position control handler
-            command_result = controller.set_joint_position_target(next_target)
+    for i in range(steps):
+        # Read feedback to check for errors
+        target_feedback = controller.get_target_feedback()
+        if target_feedback.error_message is not None:
+            raise RuntimeError(f"Error in feedback during target pose move: {target_feedback.error_message}")
 
-            if command_result.error_message is not None:
-                raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
-            sleep_time = 0.020 - (time.monotonic() - loop_start)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-    finally:
-        controller.stop_control()
+        # Interpolate each joint linearly towards the target pose
+        loop_start = time.monotonic()
+        alpha = i / max(steps - 1, 1)
+        target = [c + alpha * (s - c) for c, s in zip(current_joints, target_joints)]
+        next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
+            joint_positions=target
+        )   # safety filters for the position control handler
+        command_result = controller.set_joint_position_target(next_target)
+
+        if command_result.error_message is not None:
+            raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
+        sleep_time = 0.020 - (time.monotonic() - loop_start)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
 
 
@@ -87,9 +86,13 @@ def collect_calibration_data(camera_pipeline, camera_align, robot, controller, c
 
     file_path = "camera/calibration_waypoints.txt"
     waypoints = read_calibration_waypoints_file(file_path)
+    if not waypoints:
+        raise RuntimeError(f"No calibration waypoints found in {file_path}.")
     
     robot_poses = []
     images = []
+    image_dir = Path("camera/calibration_images")
+    image_dir.mkdir(parents=True, exist_ok=True)
 
     print("🏁 Starting automated calibration sweep...")
     
@@ -109,11 +112,17 @@ def collect_calibration_data(camera_pipeline, camera_align, robot, controller, c
 
         
         # ========== Capture robot pose ==========
-        state = robot.get_state()
+        state = robot.read_once()
         T_b_g = np.array(state.O_T_EE).reshape((4,4), order='F')
         
         images.append(color_image)
         robot_poses.append(T_b_g)
+        image_index = len(images)
+        image_path = image_dir / f"{image_index}.png"
+        if not cv2.imwrite(str(image_path), color_image):
+            print(f" [!] Failed to save calibration image: {image_path}")
+        else:
+            print(f" [v] Saved calibration image: {image_path}")
         print(f" [v] Captured image and pose data for waypoint {i+1}")
 
     camera_pipeline.stop()

@@ -163,6 +163,23 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     setDefaultBehaviour(robot)
 
 
+    # =========== CONFIGURE THE SAFE CONTROLLER ================
+    joint_position_control_configuration = \
+        franka.AsyncPositionControlHandler.Configuration(
+            maximum_joint_velocities=kDefaultMaximumVelocities,
+            goal_tolerance=kDefaultGoalTolerance
+    )
+    result = franka.AsyncPositionControlHandler.configure(
+        robot,
+        joint_position_control_configuration
+        )
+    if result.error_message is not None:
+        print(result.error_message)
+        sys.exit(-1)
+
+    position_control_handler = result.handler
+
+
     # =========== CAMERA SETUP ================
     print("\nSetting up RealSense camera for tracking...")
     try:
@@ -177,7 +194,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     # =========== CALIBRATION: GET TRANSFORM FROM CAMERA TO ROBOT EE ================
     if do_calibration:
         print("\nStarting hand-eye calibration process...")
-        robot_poses, images = collect_calibration_data(camera.pipeline, camera.align, robot, position_control_handler, kDefaultGoalTolerance)
+        robot_poses, images = collect_calibration_data(camera.pipeline, camera.align, robot, position_control_handler, kStartJointTolerance)
         T_flange_to_camera = camera.run_hand_eye_calibration(robot_poses, images)
         print("Hand-eye calibration complete. Transformation matrix:")
         print(T_flange_to_camera)
@@ -218,21 +235,6 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     position_control_handler = None
     gripper_thread = None  # track gripper thread to join before next action
     try:
-        # =========== CONFIGURE THE SAFE CONTROLLER ================
-        joint_position_control_configuration = \
-            franka.AsyncPositionControlHandler.Configuration(
-                maximum_joint_velocities=kDefaultMaximumVelocities,
-                goal_tolerance=kDefaultGoalTolerance
-        )
-        result = franka.AsyncPositionControlHandler.configure(
-            robot,
-            joint_position_control_configuration
-            )
-        if result.error_message is not None:
-            print(result.error_message)
-            sys.exit(-1)
-
-        position_control_handler = result.handler
 
         # =========== MOVE ROBOT TO START POSE ================
         move_robot_to_start_pose(

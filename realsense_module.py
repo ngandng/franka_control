@@ -260,7 +260,7 @@ class RealSenseTracker:
         return [world_x, world_y, world_z]
 
 
-    def run_hand_eye_calibration(robot_poses, images, chessboard_size=(7, 5), square_size=0.034):
+    def run_hand_eye_calibration(self, robot_poses, images, chessboard_size=(7, 5), square_size=0.034):
         """
         Solves for the static transformation matrix between the wrist and camera lens.
         square_size is the physical width of one black square on your paper in meters
@@ -271,27 +271,34 @@ class RealSenseTracker:
         R_target2cam = []
         t_target2cam = []
 
+        if not isinstance(chessboard_size, (tuple, list)) or len(chessboard_size) != 2:
+            raise TypeError(
+                f"chessboard_size must be a 2-item tuple/list of ints, got: {type(chessboard_size).__name__}"
+            )
+
+        cols = int(chessboard_size[0])
+        rows = int(chessboard_size[1])
+
         # Define 3D object points for the chessboard corner grid
-        objp = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
-        objp[:, :2] = np.mgrid[0:chessboard_size[0], 0:chessboard_size[1]].T.reshape(-1, 2) * square_size
+        objp = np.zeros((cols * rows, 3), np.float32)
+        objp[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * square_size
 
         # Camera intrinsic matrix (pull this from your realsense pipeline profile)
         K = [[606.4210,   0.0000, 324.2198],[0.0000, 606.1948, 248.3232],[0.0000,   0.0000,   1.0000]]
         # K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         
+        if len(robot_poses) != len(images):
+            raise ValueError(
+                f"robot_poses ({len(robot_poses)}) and images ({len(images)}) must have the same length"
+            )
+
         print("🔄 Processing frames and extracting calibration transformations...")
 
+        valid_pairs = 0
         for i in range(len(images)):
-            # --- A. Extract Robot Transformations ---
-            # OpenCV expects the transformation from Gripper to Base (or Base to Gripper)
-            T_b_g = robot_poses[i] # Your 4x4 O_T_EE matrix
-            
-            R_gripper2base.append(T_b_g[0:3, 0:3])
-            t_gripper2base.append(T_b_g[0:3, 3])
-
-            # --- B. Extract Camera Transformations via Chessboard ---
+            # --- Extract Camera Transformations via Chessboard ---
             gray = cv2.cvtColor(images[i], cv2.COLOR_BGR2GRAY)
-            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+            ret, corners = cv2.findChessboardCorners(gray, (cols, rows), None)
             
             if ret:
                 # Refine corner locations for sub-pixel accuracy
@@ -303,11 +310,25 @@ class RealSenseTracker:
                 
                 # Convert rotation vector to a 3x3 matrix
                 R_c_t, _ = cv2.Rodrigues(rvec)
-                
+
+                # Keep only matched robot/camera pairs.
+                # OpenCV requires all four lists to have equal length.
+                T_b_g = robot_poses[i]  # Your 4x4 O_T_EE matrix
+                R_gripper2base.append(T_b_g[0:3, 0:3])
+                t_gripper2base.append(T_b_g[0:3, 3])
                 R_target2cam.append(R_c_t)
                 t_target2cam.append(tvec)
+                valid_pairs += 1
             else:
                 print(f"⚠️ Chessboard corners not found in frame {i}!")
+
+        print(f"✅ Valid calibration pairs: {valid_pairs}/{len(images)}")
+
+        if valid_pairs < 3:
+            raise RuntimeError(
+                "Not enough valid chessboard detections for hand-eye calibration. "
+                f"Need at least 3, got {valid_pairs}."
+            )
 
         # 2. RUN THE MATHEMATICAL SOLVER
         # Tsai-Lenz is the industry-standard, highly robust mathematical solver method

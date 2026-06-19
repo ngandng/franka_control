@@ -5,15 +5,15 @@ import signal
 import math
 import threading
 import numpy as np
-
-import cv2
+from pathlib import Path
 
 import pylibfranka as franka
 from pylibfranka_examples.example_common import MotionGenerator, setDefaultBehaviour
 
 from realsense_module import RealSenseTracker
+from camera.calibration_collector import collect_calibration_data
 
-
+# ============= GLOBAL CONFIGURATION =============
 ROBOT_IP = "172.16.0.2"
 
 GRIPPER_THRESHOLD = 0.002                       # 2mm buffer to ignore minor floating-point noise
@@ -26,6 +26,10 @@ kGripperMoveSpeed = 0.1                         # m/s
 kGripperForce = 60.0                            # N
 
 motion_finished = False
+
+do_calibration = True  # Set to True to perform hand-eye calibration before executing the trajectory
+#=================================================
+
 
 
 def _camera_stream_worker(camera, stop_event):
@@ -127,81 +131,6 @@ def move_robot_to_start_pose(robot, trajectory, controller, tolerance=kStartJoin
     assert_robot_is_at_start(robot, trajectory, tolerance=tolerance)
 
 
-def collect_calibration_data(robot, pipeline, align, chessboard_size=(7, 5)):
-    robot_poses = []
-    images = []
-    
-    print("\n📸 --- Hand-Eye Calibration Data Collector ---")
-    print("Instructions:")
-    print("1. Enter Guiding Mode (freedrive) on the Franka arm.")
-    print("2. Move the arm to unique viewpoints looking at the chessboard.")
-    print("   * Rotate the wrist (pitch/roll/yaw) at various angles.")
-    print("   * Change heights (close and far).")
-    print("3. Press 's' in the video window to SAVE a snapshot frame.")
-    print("4. Press 'q' when you have collected 10-15 good snapshots to run calibration.\n")
-
-    while True:
-        # Gather frames from camera
-        frames = pipeline.wait_for_frames()
-        aligned_frames = align.process(frames)
-        color_frame = aligned_frames.get_color_frame()
-        if not color_frame:
-            continue
-
-        color_image = np.asanyarray(color_frame.get_data())
-        display_img = color_image.copy()
-
-        # Real-time visual feedback: attempt to find chessboard corners live
-        gray = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
-        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
-        
-        # Draw the grid live so you know if the camera sees it clearly
-        if ret:
-            cv2.drawChessboardCorners(display_img, chessboard_size, corners, ret)
-            cv2.putText(display_img, "CHESSBOARD DETECTED", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        else:
-            cv2.putText(display_img, "LOOKING FOR CHESSBOARD...", (10, 30), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-        # Show status overlay
-        status_str = f"Snapshots Saved: {len(images)}"
-        cv2.putText(display_img, status_str, (10, 60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-
-        cv2.imshow("Hand-Eye Data Capture Stream", display_img)
-        key = cv2.waitKey(1) & 0xFF
-
-        # ── CAPTURE SNAPSHOT ─────────────────────────────────────────────────
-        if key == ord('s'):
-            if not ret:
-                print("❌ Cannot save snapshot! The camera cannot see the entire chessboard.")
-                continue
-                
-            print("⏳ Arm standing still? Capturing snapshot...")
-            time.sleep(0.5) # Small pause to make sure hand isn't shaking during move
-            
-            # 1. Read live robot frame state matrix from libfranka
-            # Replace this block with your exact robot object's state checker
-            robot_state = robot.read_once() 
-            T_base_to_flange = np.array(robot_state.O_T_EE).reshape((4, 4), order='F')
-            
-            # 2. Append data states to lists
-            robot_poses.append(T_base_to_flange)
-            images.append(color_image)
-            
-            print(f"✅ Snapshot {len(images)} saved successfully.")
-
-        # ── EXIT AND EXECUTE ─────────────────────────────────────────────────
-        elif key == ord('q'):
-            if len(images) < 3:
-                print("❌ Collect at least 3 snapshots (preferable 10+) before calibrating!")
-                continue
-            break
-
-    cv2.destroyAllWindows()
-    return robot_poses, images
-
 
 def run_hardware_execution(filename="path_data/example_path.json"):
 
@@ -233,6 +162,7 @@ def run_hardware_execution(filename="path_data/example_path.json"):
 
     setDefaultBehaviour(robot)
 
+
     # =========== CAMERA SETUP ================
     print("\nSetting up RealSense camera for tracking...")
     try:
@@ -244,9 +174,27 @@ def run_hardware_execution(filename="path_data/example_path.json"):
         sys.exit(-1)
 
 
-    # =========== CALIBRATION: GET TRANSFORM FROM CAMERA TO ROBOT BASE ================
-    robot_poses, images = collect_calibration_data(robot, camera.pipeline, camera.align)
-    T_flange_to_camera = camera.run_hand_eye_calibration(robot_poses, images)
+    # =========== CALIBRATION: GET TRANSFORM FROM CAMERA TO ROBOT EE ================
+    if do_calibration:
+        print("\nStarting hand-eye calibration process...")
+        robot_poses, images = collect_calibration_data(camera.pipeline, camera.align, robot, position_control_handler, kDefaultGoalTolerance)
+        T_flange_to_camera = camera.run_hand_eye_calibration(robot_poses, images)
+        print("Hand-eye calibration complete. Transformation matrix:")
+        print(T_flange_to_camera)
+
+    # Save T_flange_to_camera to a file for future use, or pass it to the camera object for real-time transformations.
+    config_dir = Path("config")
+    config_dir.mkdir(exist_ok=True)
+    config_file = config_dir / "hand_eye_calibration.json"
+
+    calibration_data = {
+        "T_flange_to_camera": T_flange_to_camera.tolist(),
+        "units": "meters",
+        "description": "Transformation matrix from Franka hand flange to RealSense color lens frame."
+    }
+    with open(config_file, "w") as f:
+        json.dump(calibration_data, f, indent=4)
+
 
 
     # =========== CAMERA RUNNING IN BACKGROUND THREAD ================

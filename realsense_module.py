@@ -39,14 +39,45 @@ class RealSenseTracker:
 
     def setup_camera_pipeline(self):
         self.pipeline = rs.pipeline()
-        config = rs.config()
-        config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-        config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+        self.alignconfig = rs.config()
+        self.alignconfig.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        self.alignconfig.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
-        profile = self.pipeline.start(config)
+        profile = self.pipeline.start(self.alignconfig)
         color_stream = profile.get_stream(rs.stream.color)
         self.intrinsics = color_stream.as_video_stream_profile().get_intrinsics()
         self.align = rs.align(rs.stream.color)
+
+
+    def _get_info(self):
+        # Configure and start the pipeline        
+        profile = self.pipeline.start(self.alignconfig)
+        
+        try:
+            # Get the video stream profile for the color camera
+            color_stream = profile.get_stream(rs.stream.color)
+            video_profile = color_stream.as_video_stream_profile()
+            
+            # Fetch the intrinsics object
+            intrinsics = video_profile.get_intrinsics()
+            
+            # Print out the components of the Intrinsic Matrix
+            print("\n📷 --- RealSense D435 Color Intrinsics ---")
+            print(f"Resolution:  {intrinsics.width} x {intrinsics.height}")
+            print(f"Focal Length: fx = {intrinsics.fx:.4f}, fy = {intrinsics.fy:.4f}")
+            print(f"Principal Pt: ppx = {intrinsics.ppx:.4f}, ppy = {intrinsics.ppy:.4f}")
+            print(f"Distortion Model: {intrinsics.model}")
+            print(f"Distortion Coeffs: {intrinsics.coeffs}")
+            
+            # Construct the formal 3x3 K matrix
+            print("\nFormated K Matrix:")
+            print(f"[[{intrinsics.fx:.4f},   0.0000, {intrinsics.ppx:.4f}],")
+            print(f" [  0.0000, {intrinsics.fy:.4f}, {intrinsics.ppy:.4f}],")
+            print(f" [  0.0000,   0.0000,   1.0000]]\n")
+            
+        finally:
+            self.pipeline.stop()
+
 
     def classify_shape(self, contour):
         perimeter = cv2.arcLength(contour, True)
@@ -60,6 +91,7 @@ class RealSenseTracker:
             aspect_ratio = w / float(h)
             return "Square" if 0.9 <= aspect_ratio <= 1.1 else "Rectangle"
         return "Cylinder/Circle"
+
 
     def extract_pose(self, depth_frame, contour):
         rect = cv2.minAreaRect(contour)

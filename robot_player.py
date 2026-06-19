@@ -11,7 +11,7 @@ import cv2
 import pylibfranka as franka
 from pylibfranka_examples.example_common import MotionGenerator, setDefaultBehaviour
 
-from realsense_module import RealSenseTracker, get_object_in_world_frame
+from realsense_module import RealSenseTracker
 
 
 ROBOT_IP = "172.16.0.2"

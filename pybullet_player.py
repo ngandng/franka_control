@@ -78,6 +78,18 @@ def run_simulation_check(filename="path_data/trajectory_from_planned_path.json")
             time.sleep(0.020 - elapsed)
             
     print("Simulation check finished. If the arm did not crash, it is safe for hardware.")
+    print("PyBullet window will stay open. Press 'q' in the GUI or Ctrl+C in terminal to exit.")
+
+    try:
+        while p.isConnected():
+            keys = p.getKeyboardEvents()
+            if ord('q') in keys and keys[ord('q')] & p.KEY_WAS_TRIGGERED:
+                break
+            p.stepSimulation()
+            time.sleep(1.0 / 240.0)
+    except KeyboardInterrupt:
+        pass
+
     p.disconnect()
 
 if __name__ == "__main__":

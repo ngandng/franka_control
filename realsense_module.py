@@ -193,31 +193,106 @@ class RealSenseTracker:
         cv2.destroyAllWindows()
 
 
-def get_object_in_world_frame(camera_xyz, T_base_to_flange, T_flange_to_camera):
-    """
-    Transforms an object's [X,Y,Z] from the camera lens to the real-world robot base.
-    """
-    # 1. Convert the 3D point to a 4x1 Homogeneous Coordinate Vector
-    P_camera = np.array([[camera_xyz[0]], 
-                         [camera_xyz[1]], 
-                         [camera_xyz[2]], 
-                         [1.0]])
-    
-    # 2. Transform from Camera Frame -> Wrist Flange Frame
-    P_flange = np.dot(T_flange_to_camera, P_camera)
-    
-    # 3. Transform from Wrist Flange Frame -> Robot Base Frame
-    P_base = np.dot(T_base_to_flange, P_flange)
+    def get_object_in_world_frame(self, T_base_to_flange):
+        """
+        Transforms an object's [X,Y,Z] from the camera lens to the real-world robot base.
+        """
 
-    P_base = P_base.flatten()  # Convert from 4x1 to 1D array for easier access
+        camera_xyz = self.get_object_camera_xyz()
+        if camera_xyz is None:
+            return None
 
-    # print(f"Debug: P_camera = {P_camera}")
-    # print(f"Debug: P_flange = {P_flange}")
-    # print(f"Debug: P_base = {P_base}")
-    
-    # 4. Extract the clean real-world X, Y, Z coordinates (in meters)
-    world_x = float(P_base[0])
-    world_y = float(P_base[1])
-    world_z = float(P_base[2])
-    
-    return [world_x, world_y, world_z]
+        # 1. Convert the 3D point to a 4x1 Homogeneous Coordinate Vector
+        P_camera = np.array([[camera_xyz[0]], 
+                            [camera_xyz[1]], 
+                            [camera_xyz[2]], 
+                            [1.0]])
+        
+        # 2. Transform from Camera Frame -> Wrist Flange Frame
+        P_flange = np.dot(self.T_flange_to_camera, P_camera)
+        
+        # 3. Transform from Wrist Flange Frame -> Robot Base Frame
+        P_base = np.dot(T_base_to_flange, P_flange)
+
+        P_base = P_base.flatten()  # Convert from 4x1 to 1D array for easier access
+
+        # print(f"Debug: P_camera = {P_camera}")
+        # print(f"Debug: P_flange = {P_flange}")
+        # print(f"Debug: P_base = {P_base}")
+        
+        # 4. Extract the clean real-world X, Y, Z coordinates (in meters)
+        world_x = float(P_base[0])
+        world_y = float(P_base[1])
+        world_z = float(P_base[2])
+        
+        return [world_x, world_y, world_z]
+
+
+    def run_hand_eye_calibration(robot_poses, images, chessboard_size=(7, 5), square_size=0.034):
+        """
+        Solves for the static transformation matrix between the wrist and camera lens.
+        square_size is the physical width of one black square on your paper in meters
+        """
+        # 1. Trackers for coordinates
+        R_gripper2base = []
+        t_gripper2base = []
+        R_target2cam = []
+        t_target2cam = []
+
+        # Define 3D object points for the chessboard corner grid
+        objp = np.zeros((chessboard_size[0] * chessboard_size[1], 3), np.float32)
+        objp[:, :2] = np.mgrid[0:chessboard_size[0], 0:chessboard_size[1]].T.reshape(-1, 2) * square_size
+
+        # Camera intrinsic matrix (pull this from your realsense pipeline profile)
+        K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+        
+        print("🔄 Processing frames and extracting calibration transformations...")
+
+        for i in range(len(images)):
+            # --- A. Extract Robot Transformations ---
+            # OpenCV expects the transformation from Gripper to Base (or Base to Gripper)
+            T_b_g = robot_poses[i] # Your 4x4 O_T_EE matrix
+            
+            R_gripper2base.append(T_b_g[0:3, 0:3])
+            t_gripper2base.append(T_b_g[0:3, 3])
+
+            # --- B. Extract Camera Transformations via Chessboard ---
+            gray = cv2.cvtColor(images[i], cv2.COLOR_BGR2GRAY)
+            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
+            
+            if ret:
+                # Refine corner locations for sub-pixel accuracy
+                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                
+                # Solve Perspective-n-Point to find where the board is relative to the lens
+                _, rvec, tvec = cv2.solvePnP(objp, corners2, K, None)
+                
+                # Convert rotation vector to a 3x3 matrix
+                R_c_t, _ = cv2.Rodrigues(rvec)
+                
+                R_target2cam.append(R_c_t)
+                t_target2cam.append(tvec)
+            else:
+                print(f"⚠️ Chessboard corners not found in frame {i}!")
+
+        # 2. RUN THE MATHEMATICAL SOLVER
+        # Tsai-Lenz is the industry-standard, highly robust mathematical solver method
+        R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(
+            R_gripper2base, t_gripper2base,
+            R_target2cam, t_target2cam,
+            method=cv2.CALIB_HAND_EYE_TSAI
+        )
+
+        # 3. BUILD YOUR FINAL 4x4 HOMOGENEOUS MATRIX
+        T_camera_to_flange = np.eye(4)
+        T_camera_to_flange[0:3, 0:3] = R_cam2gripper
+        T_camera_to_flange[0:3, 3] = t_cam2gripper.flatten()
+
+        # Invert it to get Flange to Camera
+        T_flange_to_camera = np.linalg.inv(T_camera_to_flange)
+        
+        print("\n✅ Calibration Complete! Copy this matrix into your TAMP player script:")
+        print(np.array2string(T_flange_to_camera, separator=', '))
+        
+        return T_flange_to_camera

@@ -26,6 +26,14 @@ kGripperForce = 60.0                            # N
 motion_finished = False
 
 
+def _camera_stream_worker(camera, stop_event):
+    try:
+        camera.stream_loop(stop_event=stop_event)
+    except Exception as exc:
+        print(f"Camera stream stopped due to error: {exc}")
+        stop_event.set()
+
+
 def signal_handler(sig, frame):
     global motion_finished
     if sig == signal.SIGINT:
@@ -150,64 +158,69 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     # =========== CAMERA SETUP ================
     print("\nSetting up RealSense camera for tracking...")
     try:
-        tracker = RealSenseTracker()
+        camera = RealSenseTracker()
         print("Camera setup complete. Starting execution in 3s...")
         time.sleep(3)
     except Exception as e:
         print(f"Failed to initialize RealSense camera: {e}")
         sys.exit(-1)
 
-    T_flange_to_camera = tracker.T_flange_to_camera
+    T_flange_to_camera = camera.T_flange_to_camera
     robot_state = robot.read_once()
     T_base_to_flange = np.array(robot_state.O_T_EE).reshape((4, 4), order='F')
 
     # --- Usage inside your vision loop ---
     # camera_xyz = [x_c, y_c, z_c] # Pulled from your rs2_deproject_pixel_to_point function
-    camera_xyz = tracker.get_object_camera_xyz()
+    camera_xyz = camera.get_object_camera_xyz()
     print(f"📷 Camera Frame Position: {camera_xyz}")
-    object_world_xyz = get_object_in_world_frame(camera_xyz, T_base_to_flange, T_flange_to_camera)
+    if camera_xyz is not None:
+        object_world_xyz = get_object_in_world_frame(camera_xyz, T_base_to_flange, T_flange_to_camera)
+        print(f"🌍 Real-World Workspace Position: {object_world_xyz}")
+    else:
+        print("No object detected in the first camera frame.")
 
-    print(f"🌍 Real-World Workspace Position: {object_world_xyz}")
-    return
-
-    # =========== CONFIGURE THE SAFE CONTROLLER ================
-    joint_position_control_configuration = \
-        franka.AsyncPositionControlHandler.Configuration(
-            maximum_joint_velocities=kDefaultMaximumVelocities,
-            goal_tolerance=kDefaultGoalTolerance
+    camera_stop_event = threading.Event()
+    camera_thread = threading.Thread(
+        target=_camera_stream_worker,
+        args=(camera, camera_stop_event),
+        daemon=True,
     )
-    result = franka.AsyncPositionControlHandler.configure(
-        robot, 
-        joint_position_control_configuration
-        )
-    if result.error_message is not None:
-        print(result.error_message)
-        sys.exit(-1)
+    camera_thread.start()
 
-    position_control_handler = result.handler
-    target_feedback = position_control_handler.get_target_feedback()
-
-
-
-    # =========== MOVE ROBOT TO START POSE ================
-    move_robot_to_start_pose(
-        robot, 
-        trajectory,
-        position_control_handler
-    )
-    time.sleep(0.5)
-
-
-    # =========== MAIN EXECUTION LOOP ================
-    time_step = 0.020  # 50 Hz matching trajectory file
-
-    print("Pre-flight check passed. Starting execution in 3s... Hold the E-Stop!")
-    time.sleep(3)
-
-    last_gripper_width = trajectory[0].get("gripper") if gripper is not None else None
+    position_control_handler = None
     gripper_thread = None  # track gripper thread to join before next action
-
     try:
+        # =========== CONFIGURE THE SAFE CONTROLLER ================
+        joint_position_control_configuration = \
+            franka.AsyncPositionControlHandler.Configuration(
+                maximum_joint_velocities=kDefaultMaximumVelocities,
+                goal_tolerance=kDefaultGoalTolerance
+        )
+        result = franka.AsyncPositionControlHandler.configure(
+            robot,
+            joint_position_control_configuration
+            )
+        if result.error_message is not None:
+            print(result.error_message)
+            sys.exit(-1)
+
+        position_control_handler = result.handler
+
+        # =========== MOVE ROBOT TO START POSE ================
+        move_robot_to_start_pose(
+            robot,
+            trajectory,
+            position_control_handler
+        )
+        time.sleep(0.5)
+
+        # =========== MAIN EXECUTION LOOP ================
+        time_step = 0.020  # 50 Hz matching trajectory file
+
+        print("Pre-flight check passed. Starting execution in 3s... Hold the E-Stop!")
+        time.sleep(3)
+
+        last_gripper_width = trajectory[0].get("gripper") if gripper is not None else None
         for step_data in trajectory:
             if motion_finished:
                 print("Stop requested. Halting hardware execution.")
@@ -252,10 +265,15 @@ def run_hardware_execution(filename="path_data/example_path.json"):
                 time.sleep(sleep_time)
 
     finally:
+        camera_stop_event.set()
+        camera.stop()
+        camera_thread.join(timeout=2.0)
+
         # Wait for any in-progress gripper action to complete
         if gripper_thread is not None:
             gripper_thread.join()
-        position_control_handler.stop_control()
+        if position_control_handler is not None:
+            position_control_handler.stop_control()
 
     print("Execution complete.")
 

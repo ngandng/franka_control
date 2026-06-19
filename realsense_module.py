@@ -244,7 +244,8 @@ class RealSenseTracker:
         objp[:, :2] = np.mgrid[0:chessboard_size[0], 0:chessboard_size[1]].T.reshape(-1, 2) * square_size
 
         # Camera intrinsic matrix (pull this from your realsense pipeline profile)
-        K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+        K = [[606.4210,   0.0000, 324.2198],[0.0000, 606.1948, 248.3232],[0.0000,   0.0000,   1.0000]]
+        # K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         
         print("🔄 Processing frames and extracting calibration transformations...")
 

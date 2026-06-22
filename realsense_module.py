@@ -194,35 +194,37 @@ class RealSenseTracker:
         return largest["pose"]["xyz"]
 
     def stream_loop(self, stop_event=None):
-        while stop_event is None or not stop_event.is_set():
-            try:
-                color_image, depth_frame = self.get_aligned_frames()
-            except RuntimeError:
-                break
-            if color_image is None:
-                continue
+        try:
+            while stop_event is None or not stop_event.is_set():
+                try:
+                    color_image, depth_frame = self.get_aligned_frames()
+                except RuntimeError:
+                    break
+                if color_image is None:
+                    continue
 
-            combined_mask, detections = self.process_frame(color_image, depth_frame)
-            for detection in detections:
-                self.draw_detection(
-                    color_image,
-                    detection["color"],
-                    detection["shape"],
-                    detection["pose"],
-                )
+                combined_mask, detections = self.process_frame(color_image, depth_frame)
+                for detection in detections:
+                    self.draw_detection(
+                        color_image,
+                        detection["color"],
+                        detection["shape"],
+                        detection["pose"],
+                    )
 
-            cv2.imshow("RealSense Workspace Stream", color_image)
-            cv2.imshow("Active Color Mask", combined_mask)
+                cv2.imshow("RealSense Workspace Stream", color_image)
+                cv2.imshow("Active Color Mask", combined_mask)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                if stop_event is not None:
-                    stop_event.set()
-                break
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    if stop_event is not None:
+                        stop_event.set()
+                    break
+        finally:
+            cv2.destroyAllWindows()
 
     def stop(self):
         if self.pipeline is not None:
             self.pipeline.stop()
-        cv2.destroyAllWindows()
 
 
     def get_object_in_world_frame(self, T_base_to_flange):

@@ -27,7 +27,7 @@ kGripperForce = 60.0                            # N
 
 motion_finished = False
 
-do_calibration = True  # Set to True to perform hand-eye calibration before executing the trajectory
+do_calibration = False  # Set to True to perform hand-eye calibration before executing the trajectory
 #=================================================
 
 
@@ -101,32 +101,29 @@ def move_robot_to_start_pose(robot, trajectory, controller, tolerance=kStartJoin
 
     # Interpolate slowly from current to start joints
     steps = 1000  # 20 seconds at 50Hz — slow and safe
-    try:
-        for i in range(steps):
-            if motion_finished:
-                break
+    for i in range(steps):
+        if motion_finished:
+            break
 
-            # Read feedback to check for errors
-            target_feedback = controller.get_target_feedback()
-            if target_feedback.error_message is not None:
-                raise RuntimeError(f"Error in feedback during start pose move: {target_feedback.error_message}")
-            
-            # Interpolate each joint linearly towards the start pose
-            loop_start = time.monotonic()
-            alpha = i / max(steps - 1, 1)
-            target = [c + alpha * (s - c) for c, s in zip(current_joints, start_joints)]
-            next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
-                joint_positions=target
-            )   # safety filters for the position control handler
-            command_result = controller.set_joint_position_target(next_target)
+        # Read feedback to check for errors
+        target_feedback = controller.get_target_feedback()
+        if target_feedback.error_message is not None:
+            raise RuntimeError(f"Error in feedback during start pose move: {target_feedback.error_message}")
 
-            if command_result.error_message is not None:
-                raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
-            sleep_time = 0.020 - (time.monotonic() - loop_start)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-    finally:
-        controller.stop_control()
+        # Interpolate each joint linearly towards the start pose
+        loop_start = time.monotonic()
+        alpha = i / max(steps - 1, 1)
+        target = [c + alpha * (s - c) for c, s in zip(current_joints, start_joints)]
+        next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
+            joint_positions=target
+        )   # safety filters for the position control handler
+        command_result = controller.set_joint_position_target(next_target)
+
+        if command_result.error_message is not None:
+            raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
+        sleep_time = 0.020 - (time.monotonic() - loop_start)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
     assert_robot_is_at_start(robot, trajectory, tolerance=tolerance)
 
@@ -199,18 +196,30 @@ def run_hardware_execution(filename="path_data/example_path.json"):
         print("Hand-eye calibration complete. Transformation matrix:")
         print(T_flange_to_camera)
 
-    # Save T_flange_to_camera to a file for future use, or pass it to the camera object for real-time transformations.
-    config_dir = Path("config")
-    config_dir.mkdir(exist_ok=True)
-    config_file = config_dir / "hand_eye_calibration.json"
+        # Save T_flange_to_camera to a file for future use, or pass it to the camera object for real-time transformations.
+        config_dir = Path("config")
+        config_dir.mkdir(exist_ok=True)
+        config_file = config_dir / "hand_eye_calibration.json"
 
-    calibration_data = {
-        "T_flange_to_camera": T_flange_to_camera.tolist(),
-        "units": "meters",
-        "description": "Transformation matrix from Franka hand flange to RealSense color lens frame."
-    }
-    with open(config_file, "w") as f:
-        json.dump(calibration_data, f, indent=4)
+        calibration_data = {
+            "T_flange_to_camera": T_flange_to_camera.tolist(),
+            "units": "meters",
+            "description": "Transformation matrix from Franka hand flange to RealSense color lens frame."
+        }
+        with open(config_file, "w") as f:
+            json.dump(calibration_data, f, indent=4)
+    else:
+        # Load existing calibration if available
+        config_file = Path("config/hand_eye_calibration.json")
+        if config_file.exists():
+            with open(config_file, "r") as f:
+                calibration_data = json.load(f)
+                T_flange_to_camera = np.array(calibration_data["T_flange_to_camera"])
+                print("Loaded hand-eye calibration from file:")
+                print(T_flange_to_camera)
+        else:
+            print("No hand-eye calibration file found. Proceeding without calibration.")
+            T_flange_to_camera = None
 
 
 
@@ -232,7 +241,6 @@ def run_hardware_execution(filename="path_data/example_path.json"):
     )
     camera_thread.start()
 
-    position_control_handler = None
     gripper_thread = None  # track gripper thread to join before next action
     try:
 

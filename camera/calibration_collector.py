@@ -125,7 +125,7 @@ def collect_calibration_data(camera_pipeline, camera_align, robot, controller, c
             print(f" [v] Saved calibration image: {image_path}")
         print(f" [v] Captured image and pose data for waypoint {i+1}")
 
-    camera_pipeline.stop()
+    # Do NOT stop the pipeline here — the caller still needs it running.
     return robot_poses, images
     # Pass 'robot_poses' and 'images' directly into cv2.calibrateHandEye() here!
 

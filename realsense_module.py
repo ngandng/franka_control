@@ -260,93 +260,216 @@ class RealSenseTracker:
         return [world_x, world_y, world_z]
 
 
-    def run_hand_eye_calibration(self, robot_poses, images, chessboard_size=(7, 5), square_size=0.034):
+    def run_hand_eye_calibration(self, robot_poses, images, chessboard_size=(6, 4), square_size=0.034):
         """
-        Solves for the static transformation matrix between the wrist and camera lens.
-        square_size is the physical width of one black square on your paper in meters
+        Solve hand-eye calibration for wrist-camera transform.
+
+        Detection reference follows camera/calibration_images/test.py:
+        - Try CharUco detection first (with OpenCV API compatibility fallbacks).
+        - Fall back to classic chessboard corner detection.
+
+        chessboard_size is (inner_corners_x, inner_corners_y).
+        square_size is physical inner-corner spacing in meters.
         """
-        # 1. Trackers for coordinates
-        R_gripper2base = []
-        t_gripper2base = []
-        R_target2cam = []
-        t_target2cam = []
+
+        def _build_charuco_board(aruco_module, dictionary, squares_x, squares_y, marker_length):
+            if hasattr(aruco_module, "CharucoBoard"):
+                return aruco_module.CharucoBoard((squares_x, squares_y), square_size, marker_length, dictionary)
+            if hasattr(aruco_module, "CharucoBoard_create"):
+                return aruco_module.CharucoBoard_create(
+                    squares_x,
+                    squares_y,
+                    square_size,
+                    marker_length,
+                    dictionary,
+                )
+            return None
+
+        def _detect_markers(aruco_module, gray_image, dictionary):
+            if hasattr(aruco_module, "detectMarkers"):
+                return aruco_module.detectMarkers(gray_image, dictionary)
+
+            if hasattr(aruco_module, "ArucoDetector"):
+                params = None
+                if hasattr(aruco_module, "DetectorParameters"):
+                    params = aruco_module.DetectorParameters()
+                elif hasattr(aruco_module, "DetectorParameters_create"):
+                    params = aruco_module.DetectorParameters_create()
+                detector = aruco_module.ArucoDetector(dictionary, params)
+                return detector.detectMarkers(gray_image)
+
+            return None, None, None
+
+        def _interpolate_charuco(aruco_module, corners, ids, gray_image, board):
+            if hasattr(aruco_module, "interpolateCornersCharuco"):
+                return aruco_module.interpolateCornersCharuco(
+                    markerCorners=corners,
+                    markerIds=ids,
+                    image=gray_image,
+                    board=board,
+                )
+
+            if hasattr(aruco_module, "CharucoDetector"):
+                detector = aruco_module.CharucoDetector(board)
+                try:
+                    charuco_corners, charuco_ids, _, _ = detector.detectBoard(gray_image)
+                except cv2.error:
+                    charuco_corners, charuco_ids, _, _ = detector.detectBoard(gray_image, corners, ids)
+                retval = 0 if charuco_ids is None else len(charuco_ids)
+                return retval, charuco_corners, charuco_ids
+
+            return 0, None, None
 
         if not isinstance(chessboard_size, (tuple, list)) or len(chessboard_size) != 2:
             raise TypeError(
                 f"chessboard_size must be a 2-item tuple/list of ints, got: {type(chessboard_size).__name__}"
             )
 
-        cols = int(chessboard_size[0])
-        rows = int(chessboard_size[1])
-
-        # Define 3D object points for the chessboard corner grid
-        objp = np.zeros((cols * rows, 3), np.float32)
-        objp[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * square_size
-
-        # Camera intrinsic matrix (pull this from your realsense pipeline profile)
-        K = [[606.4210,   0.0000, 324.2198],[0.0000, 606.1948, 248.3232],[0.0000,   0.0000,   1.0000]]
-        # K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
-        
         if len(robot_poses) != len(images):
             raise ValueError(
                 f"robot_poses ({len(robot_poses)}) and images ({len(images)}) must have the same length"
             )
 
-        print("🔄 Processing frames and extracting calibration transformations...")
+        cols = int(chessboard_size[0])
+        rows = int(chessboard_size[1])
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+        # Classic chessboard object points (fallback path)
+        objp = np.zeros((cols * rows, 3), np.float32)
+        objp[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * square_size
+
+        # Build camera intrinsics from active RealSense profile when available.
+        if self.intrinsics is not None:
+            K = np.array([
+                [self.intrinsics.fx, 0.0, self.intrinsics.ppx],
+                [0.0, self.intrinsics.fy, self.intrinsics.ppy],
+                [0.0, 0.0, 1.0],
+            ], dtype=np.float64)
+        else:
+            K = np.array([
+                [606.4210, 0.0000, 324.2198],
+                [0.0000, 606.1948, 248.3232],
+                [0.0000, 0.0000, 1.0000],
+            ], dtype=np.float64)
+
+        # Trackers for hand-eye input pairs.
+        R_gripper2base = []
+        t_gripper2base = []
+        R_target2cam = []
+        t_target2cam = []
+
+        # CharUco setup derived from inner-corner grid (cols x rows)
+        squares_x = cols + 1
+        squares_y = rows + 1
+        marker_length = square_size * 0.7
+        charuco_dict_candidates = [
+            "DICT_4X4_50",
+            "DICT_4X4_100",
+            "DICT_5X5_50",
+            "DICT_5X5_100",
+            "DICT_6X6_50",
+            "DICT_6X6_100",
+            "DICT_6X6_250",
+        ]
+
+        print("Processing frames and extracting calibration transformations...")
 
         valid_pairs = 0
-        for i in range(len(images)):
-            # --- Extract Camera Transformations via Chessboard ---
-            gray = cv2.cvtColor(images[i], cv2.COLOR_BGR2GRAY)
-            ret, corners = cv2.findChessboardCorners(gray, (cols, rows), None)
-            
-            if ret:
-                # Refine corner locations for sub-pixel accuracy
-                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-                
-                # Solve Perspective-n-Point to find where the board is relative to the lens
-                _, rvec, tvec = cv2.solvePnP(objp, corners2, K, None)
-                
-                # Convert rotation vector to a 3x3 matrix
-                R_c_t, _ = cv2.Rodrigues(rvec)
+        for i, image in enumerate(images):
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            solved = False
 
-                # Keep only matched robot/camera pairs.
-                # OpenCV requires all four lists to have equal length.
-                T_b_g = robot_poses[i]  # Your 4x4 O_T_EE matrix
-                R_gripper2base.append(T_b_g[0:3, 0:3])
-                t_gripper2base.append(T_b_g[0:3, 3])
-                R_target2cam.append(R_c_t)
-                t_target2cam.append(tvec)
-                valid_pairs += 1
-            else:
-                print(f"⚠️ Chessboard corners not found in frame {i}!")
+            # 1) CharUco-first path (same strategy as test.py)
+            if hasattr(cv2, "aruco"):
+                aruco = cv2.aruco
+                for dict_name in charuco_dict_candidates:
+                    dict_id = getattr(aruco, dict_name, None)
+                    if dict_id is None:
+                        continue
 
-        print(f"✅ Valid calibration pairs: {valid_pairs}/{len(images)}")
+                    dictionary = aruco.getPredefinedDictionary(dict_id)
+                    board = _build_charuco_board(aruco, dictionary, squares_x, squares_y, marker_length)
+                    if board is None:
+                        continue
+
+                    marker_corners, marker_ids, _ = _detect_markers(aruco, gray, dictionary)
+                    if marker_ids is None or len(marker_ids) == 0:
+                        continue
+
+                    _, charuco_corners, charuco_ids = _interpolate_charuco(
+                        aruco,
+                        marker_corners,
+                        marker_ids,
+                        gray,
+                        board,
+                    )
+                    if charuco_ids is None or len(charuco_ids) < 4:
+                        continue
+
+                    if hasattr(board, "getChessboardCorners"):
+                        board_points = board.getChessboardCorners()
+                    else:
+                        continue
+
+                    ids_flat = charuco_ids.flatten().astype(np.int32)
+                    obj_points = board_points[ids_flat].reshape(-1, 1, 3).astype(np.float32)
+                    img_points = charuco_corners.reshape(-1, 1, 2).astype(np.float32)
+
+                    ok, rvec, tvec = cv2.solvePnP(obj_points, img_points, K, None)
+                    if not ok:
+                        continue
+
+                    R_c_t, _ = cv2.Rodrigues(rvec)
+                    T_b_g = robot_poses[i]
+                    R_gripper2base.append(T_b_g[0:3, 0:3])
+                    t_gripper2base.append(T_b_g[0:3, 3])
+                    R_target2cam.append(R_c_t)
+                    t_target2cam.append(tvec)
+                    valid_pairs += 1
+                    solved = True
+                    break
+
+            # 2) Fallback: classic chessboard
+            if not solved:
+                flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+                ret, corners = cv2.findChessboardCorners(gray, (cols, rows), flags)
+                if ret:
+                    corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                    ok, rvec, tvec = cv2.solvePnP(objp, corners2, K, None)
+                    if ok:
+                        R_c_t, _ = cv2.Rodrigues(rvec)
+                        T_b_g = robot_poses[i]
+                        R_gripper2base.append(T_b_g[0:3, 0:3])
+                        t_gripper2base.append(T_b_g[0:3, 3])
+                        R_target2cam.append(R_c_t)
+                        t_target2cam.append(tvec)
+                        valid_pairs += 1
+                        solved = True
+
+            if not solved:
+                print(f"Chessboard/CharUco detection not found in frame {i}.")
+
+        print(f"Valid calibration pairs: {valid_pairs}/{len(images)}")
 
         if valid_pairs < 3:
             raise RuntimeError(
-                "Not enough valid chessboard detections for hand-eye calibration. "
+                "Not enough valid detections for hand-eye calibration. "
                 f"Need at least 3, got {valid_pairs}."
             )
 
-        # 2. RUN THE MATHEMATICAL SOLVER
-        # Tsai-Lenz is the industry-standard, highly robust mathematical solver method
         R_cam2gripper, t_cam2gripper = cv2.calibrateHandEye(
-            R_gripper2base, t_gripper2base,
-            R_target2cam, t_target2cam,
-            method=cv2.CALIB_HAND_EYE_TSAI
+            R_gripper2base,
+            t_gripper2base,
+            R_target2cam,
+            t_target2cam,
+            method=cv2.CALIB_HAND_EYE_TSAI,
         )
 
-        # 3. BUILD YOUR FINAL 4x4 HOMOGENEOUS MATRIX
         T_camera_to_flange = np.eye(4)
         T_camera_to_flange[0:3, 0:3] = R_cam2gripper
         T_camera_to_flange[0:3, 3] = t_cam2gripper.flatten()
-
-        # Invert it to get Flange to Camera
         T_flange_to_camera = np.linalg.inv(T_camera_to_flange)
-        
-        print("\n✅ Calibration Complete! Copy this matrix into your TAMP player script:")
+
+        print("\nCalibration complete. Flange-to-camera matrix:")
         print(np.array2string(T_flange_to_camera, separator=', '))
-        
         return T_flange_to_camera

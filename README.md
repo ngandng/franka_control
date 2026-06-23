@@ -62,7 +62,7 @@ Before running any external code, you must grant the workstation permission to c
 
 - An example of simple moving the robot
     ```
-    python3 test_trajectory.py
+    python3 robot_player.py
     ```
 
 ## Usefull links

@@ -18,6 +18,7 @@
 - Create virtual environment and install dependencies
     ```
     sudo apt install build-essential cmake libeigen3-dev
+    sudo apt intall libpoco-dev libfmt-dev
     python3 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt

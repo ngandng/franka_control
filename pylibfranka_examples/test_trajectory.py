@@ -19,6 +19,9 @@ from pylibfranka_examples.example_common import setDefaultBehaviour
 
 kDefaultMaximumVelocities = [0.655, 0.655, 0.655, 0.655, 1.315, 1.315, 1.315]
 kDefaultGoalTolerance = 10.0
+kStartJointTolerance = 0.05
+
+home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]        # franka arm neutral pose
 
 motion_finished = False
 
@@ -27,6 +30,73 @@ def signal_handler(sig, frame):
     global motion_finished
     if sig == signal.SIGINT:
         motion_finished = True
+
+def move_robot_to_start_pose(robot, controller, tolerance=kStartJointTolerance):
+
+    robot_state = robot.read_once()
+    current_joints = list(robot_state.q)
+    joint_errors = [abs(current - target) for current, target in zip(current_joints, home_q)]
+    max_joint_error = max(joint_errors)
+
+    if max_joint_error <= tolerance:
+        return
+
+    print(
+        "Robot is not at the trajectory start pose. "
+        f"Moving to start pose first. Max joint error: {max_joint_error:.4f} rad "
+        f"({math.degrees(max_joint_error):.2f} deg)."
+    )
+
+
+    # Interpolate slowly from current to start joints
+    steps = 1000  # 20 seconds at 50Hz — slow and safe
+    for i in range(steps):
+        if motion_finished:
+            break
+
+        # Read feedback to check for errors
+        target_feedback = controller.get_target_feedback()
+        if target_feedback.error_message is not None:
+            raise RuntimeError(f"Error in feedback during start pose move: {target_feedback.error_message}")
+
+        # Interpolate each joint linearly towards the start pose
+        loop_start = time.monotonic()
+        alpha = i / max(steps - 1, 1)
+        target = [c + alpha * (s - c) for c, s in zip(current_joints, home_q)]
+        next_target = franka.AsyncPositionControlHandler.JointPositionTarget(
+            joint_positions=target
+        )   # safety filters for the position control handler
+        command_result = controller.set_joint_position_target(next_target)
+
+        if command_result.error_message is not None:
+            raise RuntimeError(f"Hardware rejected target: {command_result.error_message}")
+        sleep_time = 0.020 - (time.monotonic() - loop_start)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+
+    assert_robot_is_at_start(robot, home_q, tolerance=tolerance)
+
+
+def assert_robot_is_at_start(robot, start_joints, tolerance=kStartJointTolerance):
+    robot_state = robot.read_once()
+    current_joints = list(robot_state.q)
+    joint_errors = [abs(current - target) for current, target in zip(current_joints, start_joints)]
+    max_joint_error = max(joint_errors)
+
+    if max_joint_error > tolerance:
+        current_deg = [round(math.degrees(value), 2) for value in current_joints]
+        start_deg = [round(math.degrees(value), 2) for value in start_joints]
+        error_deg = [round(math.degrees(value), 2) for value in joint_errors]
+        raise RuntimeError(
+            "Robot is not at the trajectory start pose. "
+            f"Max joint error is {max_joint_error:.4f} rad ({math.degrees(max_joint_error):.2f} deg), "
+            f"which exceeds the tolerance of {tolerance:.4f} rad ({math.degrees(tolerance):.2f} deg).\n"
+            f"Current joints (deg): {current_deg}\n"
+            f"Start joints (deg):   {start_deg}\n"
+            f"Absolute error (deg): {error_deg}\n"
+            "Move the arm to the start pose before replaying this file."
+        )
+
 
 
 def main():

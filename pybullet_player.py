@@ -9,14 +9,14 @@ import time
 home_q = [0, -0.5, 0, -2.5, 0, 2.0, 0.8]
 
 
-def run_simulation_check(filename="path_data/trajectory_from_planned_path.json"):
+def run_simulation_check(filename="path_data/dual_arm_trajectory.json"):
     # Setup standard PyBullet physics server
     p.connect(p.GUI)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.setGravity(0, 0, -9.81)
     p.loadURDF("plane.urdf")
 
-
+    # ======= PLANE AND FIXED OBJECTS =======
     plane = p.loadURDF("plane.urdf")
 
     table_position = [0.0, 0.0, 0.0]
@@ -26,17 +26,21 @@ def run_simulation_check(filename="path_data/trajectory_from_planned_path.json")
                           useFixedBase=True)
     table_height = 0.88
     
-    
+    # ======= FRANKA ROBOT =======
     table_surface_z = table_position[2] + table_height + 0.02       # 2cm support of our robot
-    robot_base_position = [-0.2, 0.0, table_surface_z]
-    robot_id = p.loadURDF("franka_panda/panda.urdf",
-                          basePosition=robot_base_position,
+    left_arm_id = p.loadURDF("franka_panda/panda.urdf",
+                          basePosition=[-0.2, 0.5, table_surface_z],
                           baseOrientation=p.getQuaternionFromEuler([0, 0, 0]), 
+                          useFixedBase=True)
+    right_arm_id = p.loadURDF("franka_panda/panda.urdf",
+                          basePosition=[-0.2, -0.5, table_surface_z],
+                          baseOrientation=p.getQuaternionFromEuler([0, 0, 0]),
                           useFixedBase=True)
     franka_joint_indices = [0, 1, 2, 3, 4, 5, 6]
     franka_finger_indices = [9, 10]  # left and right finger joints; each = half the gripper width
     for i, joint_angle in zip(franka_joint_indices, home_q):
-        p.resetJointState(robot_id, i, joint_angle)             # reset robot to neutral home pose
+        p.resetJointState(left_arm_id, i, joint_angle)             # reset robot to neutral home pose
+        p.resetJointState(right_arm_id, i, joint_angle)            # reset right arm to neutral home pose
 
     # Load your saved planning data file
     with open(filename, 'r') as f:
@@ -48,27 +52,74 @@ def run_simulation_check(filename="path_data/trajectory_from_planned_path.json")
     # Playback the trajectory file
     for step_data in trajectory:
         start_time = time.monotonic()
-        
-        target_joints = step_data["joints"]
 
-        # Command PyBullet's position controllers to match the file
-        p.setJointMotorControlArray(
-            bodyUniqueId=robot_id,
-            jointIndices=franka_joint_indices,
-            controlMode=p.POSITION_CONTROL,
-            targetPositions=target_joints
-        )
+        # Support both schemas:
+        # 1) single-arm: joints/gripper
+        # 2) dual-arm: left_joints/right_joints and left_gripper/right_gripper
+        if "left_joints" in step_data and "right_joints" in step_data:
+            left_target_joints = step_data["left_joints"]
+            right_target_joints = step_data["right_joints"]
 
-        # Set gripper finger positions if the trajectory includes gripper state.
-        # Each finger joint = half the total gripper width.
-        if "gripper" in step_data:
-            finger_pos = step_data["gripper"] / 2.0
             p.setJointMotorControlArray(
-                bodyUniqueId=robot_id,
-                jointIndices=franka_finger_indices,
+                bodyUniqueId=left_arm_id,
+                jointIndices=franka_joint_indices,
                 controlMode=p.POSITION_CONTROL,
-                targetPositions=[finger_pos, finger_pos]
+                targetPositions=left_target_joints
             )
+            p.setJointMotorControlArray(
+                bodyUniqueId=right_arm_id,
+                jointIndices=franka_joint_indices,
+                controlMode=p.POSITION_CONTROL,
+                targetPositions=right_target_joints
+            )
+
+            if "left_gripper" in step_data:
+                left_finger_pos = step_data["left_gripper"] / 2.0
+                p.setJointMotorControlArray(
+                    bodyUniqueId=left_arm_id,
+                    jointIndices=franka_finger_indices,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPositions=[left_finger_pos, left_finger_pos]
+                )
+            if "right_gripper" in step_data:
+                right_finger_pos = step_data["right_gripper"] / 2.0
+                p.setJointMotorControlArray(
+                    bodyUniqueId=right_arm_id,
+                    jointIndices=franka_finger_indices,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPositions=[right_finger_pos, right_finger_pos]
+                )
+        else:
+            target_joints = step_data["joints"]
+
+            # Backward compatibility: command the same single-arm trajectory on both robots.
+            p.setJointMotorControlArray(
+                bodyUniqueId=left_arm_id,
+                jointIndices=franka_joint_indices,
+                controlMode=p.POSITION_CONTROL,
+                targetPositions=target_joints
+            )
+            p.setJointMotorControlArray(
+                bodyUniqueId=right_arm_id,
+                jointIndices=franka_joint_indices,
+                controlMode=p.POSITION_CONTROL,
+                targetPositions=target_joints
+            )
+
+            if "gripper" in step_data:
+                finger_pos = step_data["gripper"] / 2.0
+                p.setJointMotorControlArray(
+                    bodyUniqueId=left_arm_id,
+                    jointIndices=franka_finger_indices,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPositions=[finger_pos, finger_pos]
+                )
+                p.setJointMotorControlArray(
+                    bodyUniqueId=right_arm_id,
+                    jointIndices=franka_finger_indices,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPositions=[finger_pos, finger_pos]
+                )
 
         p.stepSimulation()
         

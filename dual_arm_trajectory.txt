@@ -1,0 +1,228 @@
+================================================================================
+PLANNED PATH WITH 14 CONFIGURATIONS. COST: 39.0381
+RANDOM SEED: 44
+================================================================================
+
+Orbit1: {q1->q2->q3}
+Orbit Information: id=123777460037456, hex=0x70932f896750
+  Robot States: {0: 'TRANSIT', 1: 'TRANSIT'}
+  Object States: {0: 'TRANSIT', 1: 'TRANSIT'}
+  Attachments: {0: 'None', 1: 'None'}
+  Grasp Pose Objects: []
+  Placement Pose Objects: [0, 1]
+  Placement Pose Matrices:
+    Object 0:
+          [[1.    0.    0.    0.65 ]
+ [0.    1.    0.    0.2  ]
+ [0.    0.    1.    0.925]
+ [0.    0.    0.    1.   ]]
+    Object 1:
+          [[ 1.     0.     0.     0.65 ]
+ [ 0.     1.     0.    -0.2  ]
+ [ 0.     0.     1.     0.925]
+ [ 0.     0.     0.     1.   ]]
+  Configurations in this orbit path:
+  q1 (Configuration 0):
+    Joint Angles: [[0.0, -0.5, 0.0, -2.5, 0.0, 2.0, 0.8], [0.0, -0.5, 0.0, -2.5, 0.0, 2.0, 0.8]]
+    Attachments: {0: None, 1: None}
+    Is Transition: False
+    Parent Orbit IDs: [123777460037456]
+  q2 (Configuration 1):
+    Joint Angles: [[2.3644, -0.1196, -3.0752, -2.5322, -0.0168, 2.6514, 3.2305], [0.0115, 0.1652, 0.6693, -2.5237, -0.2166, 2.6439, -1.4909]]
+    Attachments: {0: None, 1: None}
+    Is Transition: False
+    Parent Orbit IDs: [123777460037456]
+  q3 (Configuration 2):
+    Joint Angles: [[2.3978, -0.409, -3.1147, -2.4917, -0.0447, 2.9003, 3.2513], [0.1453, 0.4754, 0.4494, -2.4509, -0.6753, 2.8176, -1.1563]]
+    Attachments: {0: 0, 1: 1}
+    Is Transition: True
+    Parent Orbit IDs: [123777460037456, 123777470344528]
+    Grasp Poses: [0, 1]
+      Object 0:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+      Object 1:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+    Pre Poses:
+      Robot 0: [ 2.3644 -0.1196 -3.0752 -2.5322 -0.0168  2.6514  3.2305]
+      Robot 1: [ 0.0115  0.1652  0.6693 -2.5237 -0.2166  2.6439 -1.4909]
+
+Orbit2: {q4->q5->q6}
+Orbit Information: id=123777470344528, hex=0x70933026ad50
+  Robot States: {0: 'TRANSFER', 1: 'TRANSFER'}
+  Object States: {0: 'TRANSFER', 1: 'TRANSFER'}
+  Attachments: {0: 'object 0', 1: 'object 1'}
+  Grasp Pose Objects: [0, 1]
+  Placement Pose Objects: []
+  Grasp Pose Matrices:
+    Object 0:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+    Object 1:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+  Entry Bridge: q3 (shared boundary from previous orbit)
+  Configurations in this orbit path:
+  q4 (Configuration 3):
+    Joint Angles: [[2.3644, -0.1196, -3.0752, -2.5322, -0.0168, 2.6514, 3.2305], [0.0115, 0.1652, 0.6693, -2.5237, -0.2166, 2.6439, -1.4909]]
+    Attachments: {0: 0, 1: 1}
+    Is Transition: False
+    Parent Orbit IDs: [123777470344528]
+  q5 (Configuration 4):
+    Joint Angles: [[2.4569, -0.2835, -2.8432, -2.2627, -0.1436, 2.5294, 3.6473], [-0.5342, -0.0258, 0.2566, -1.3693, -1.0134, 1.9461, -1.694]]
+    Attachments: {0: 0, 1: 1}
+    Is Transition: False
+    Parent Orbit IDs: [123777470344528]
+  q6 (Configuration 5):
+    Joint Angles: [[2.5378, -0.5198, -2.9451, -2.2302, -0.2452, 2.7307, 3.7199], [-1.08, -0.2169, -0.156, -0.2149, -1.8103, 1.2483, -1.8971]]
+    Attachments: {0: None, 1: 1}
+    Is Transition: True
+    Parent Orbit IDs: [123777470344528, 123777470345296]
+    Placement Poses: [0]
+      Object 0:
+          [[1.    0.    0.    0.8  ]
+ [0.    1.    0.    0.3  ]
+ [0.    0.    1.    0.935]
+ [0.    0.    0.    1.   ]]
+    Pre Poses:
+      Robot 0: [ 2.4569 -0.2835 -2.8432 -2.2627 -0.1436  2.5294  3.6473]
+      Robot 1: [-1.08   -0.2169 -0.156  -0.2149 -1.8103  1.2483 -1.8971]
+
+Orbit3: {q7->q8->q9}
+Orbit Information: id=123777470345296, hex=0x70933026b050
+  Robot States: {0: 'TRANSIT', 1: 'TRANSFER'}
+  Object States: {0: 'TRANSIT', 1: 'TRANSFER'}
+  Attachments: {0: 'None', 1: 'object 1'}
+  Grasp Pose Objects: [1]
+  Placement Pose Objects: [0]
+  Grasp Pose Matrices:
+    Object 1:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+  Placement Pose Matrices:
+    Object 0:
+          [[1.    0.    0.    0.8  ]
+ [0.    1.    0.    0.3  ]
+ [0.    0.    1.    0.935]
+ [0.    0.    0.    1.   ]]
+  Entry Bridge: q6 (shared boundary from previous orbit)
+  Configurations in this orbit path:
+  q7 (Configuration 6):
+    Joint Angles: [[2.4569, -0.2835, -2.8432, -2.2627, -0.1436, 2.5294, 3.6473], [-0.6611, 0.0048, 0.1356, -1.289, -0.9907, 1.9058, -1.9672]]
+    Attachments: {0: None, 1: 1}
+    Is Transition: False
+    Parent Orbit IDs: [123777470345296]
+  q8 (Configuration 7):
+    Joint Angles: [[0.5968, 0.4842, -0.969, -2.2309, 0.62, 2.4202, 3.1209], [-0.2422, 0.2266, 0.4272, -2.3632, -0.1711, 2.5632, -2.0372]]
+    Attachments: {0: None, 1: 1}
+    Is Transition: False
+    Parent Orbit IDs: [123777470345296]
+  q9 (Configuration 8):
+    Joint Angles: [[0.391, 0.685, -0.7085, -2.1766, 0.8482, 2.5606, 2.9734], [-0.1639, 0.487, 0.3087, -2.3219, -0.3944, 2.7625, -1.8764]]
+    Attachments: {0: None, 1: 1}
+    Is Transition: True
+    Parent Orbit IDs: [123777470343952, 123777470345296]
+    Grasp Poses: [1]
+      Object 1:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+    Placement Poses: [0]
+      Object 0:
+          [[1.    0.    0.    0.8  ]
+ [0.    1.    0.    0.3  ]
+ [0.    0.    1.    0.935]
+ [0.    0.    0.    1.   ]]
+    Pre Poses:
+      Robot 0: [ 0.5968  0.4842 -0.969  -2.2309  0.62    2.4202  3.1209]
+      Robot 1: [-0.2422  0.2266  0.4272 -2.3632 -0.1711  2.5632 -2.0372]
+
+Orbit4: {q10->q11->q12}
+Orbit Information: id=123777470343952, hex=0x70933026ab10
+  Robot States: {0: 'TRANSFER', 1: 'TRANSIT'}
+  Object States: {0: 'TRANSFER', 1: 'TRANSIT'}
+  Attachments: {0: 'object 0', 1: 'None'}
+  Grasp Pose Objects: [0]
+  Placement Pose Objects: [1]
+  Grasp Pose Matrices:
+    Object 0:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+  Placement Pose Matrices:
+    Object 1:
+          [[ 1.     0.     0.     0.8  ]
+ [ 0.     1.     0.    -0.4  ]
+ [ 0.     0.     1.     0.935]
+ [ 0.     0.     0.     1.   ]]
+  Entry Bridge: q9 (shared boundary from previous orbit)
+  Configurations in this orbit path:
+  q10 (Configuration 9):
+    Joint Angles: [[0.5968, 0.4842, -0.969, -2.2309, 0.62, 2.4202, 3.1209], [-0.2422, 0.2266, 0.4272, -2.3632, -0.1711, 2.5632, -2.0372]]
+    Attachments: {0: 0, 1: None}
+    Is Transition: False
+    Parent Orbit IDs: [123777470343952]
+  q11 (Configuration 10):
+    Joint Angles: [[0.8913, 0.9552, -1.3429, -2.1726, 1.1338, 2.0703, 2.8316], [-0.0402, 0.9036, 1.0988, -1.824, -0.0279, 2.6599, -0.9228]]
+    Attachments: {0: 0, 1: None}
+    Is Transition: False
+    Parent Orbit IDs: [123777470343952]
+  q12 (Configuration 11):
+    Joint Angles: [[0.757, 1.0696, -1.1158, -2.1258, 1.3159, 2.1905, 2.7586], [0.1617, 1.5805, 1.7704, -1.2849, 0.1153, 2.7566, 0.1915]]
+    Attachments: {0: 0, 1: None}
+    Is Transition: True
+    Parent Orbit IDs: [123777470345104, 123777470343952]
+    Grasp Poses: [0]
+      Object 0:
+          [[-1.000000e+00 -1.224647e-16 -1.499760e-32  0.000000e+00]
+ [-1.224647e-16  1.000000e+00  1.224647e-16  0.000000e+00]
+ [ 0.000000e+00  1.224647e-16 -1.000000e+00  0.000000e+00]
+ [ 0.000000e+00  0.000000e+00  0.000000e+00  1.000000e+00]]
+    Pre Poses:
+      Robot 0: [ 0.8913  0.9552 -1.3429 -2.1726  1.1338  2.0703  2.8316]
+      Robot 1: [ 0.1617  1.5805  1.7704 -1.2849  0.1153  2.7566  0.1915]
+
+Orbit5: {q13->q14}
+Orbit Information: id=123777470345104, hex=0x70933026af90
+  Robot States: {0: 'TRANSIT', 1: 'TRANSIT'}
+  Object States: {0: 'TRANSIT', 1: 'TRANSIT'}
+  Attachments: {0: 'None', 1: 'None'}
+  Grasp Pose Objects: []
+  Placement Pose Objects: [0, 1]
+  Placement Pose Matrices:
+    Object 1:
+          [[ 1.     0.     0.     0.8  ]
+ [ 0.     1.     0.    -0.4  ]
+ [ 0.     0.     1.     0.935]
+ [ 0.     0.     0.     1.   ]]
+    Object 0:
+          [[1.    0.    0.    0.8  ]
+ [0.    1.    0.    0.3  ]
+ [0.    0.    1.    0.935]
+ [0.    0.    0.    1.   ]]
+  Entry Bridge: q12 (shared boundary from previous orbit)
+  Configurations in this orbit path:
+  q13 (Configuration 12):
+    Joint Angles: [[0.8913, 0.9552, -1.3429, -2.1726, 1.1338, 2.0703, 2.8316], [0.0808, 0.5402, 0.8852, -1.8924, 0.0576, 2.3783, 0.4958]]
+    Attachments: {0: None, 1: None}
+    Is Transition: False
+    Parent Orbit IDs: [123777470345104]
+  q14 (Configuration 13):
+    Joint Angles: [[0.0, -0.5, 0.0, -2.5, 0.0, 2.0, 0.8], [0.0, -0.5, 0.0, -2.5, 0.0, 2.0, 0.8]]
+    Attachments: {0: None, 1: None}
+    Is Transition: False
+    Parent Orbit IDs: [123777470345104]
+

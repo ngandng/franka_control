@@ -15,7 +15,7 @@ PHYSICS_STEPS_PER_COMMAND = 5
 PLAYBACK_SPEED = 5.0  # 1.0 = real time; 5.0 = five times faster
 
 
-def run_simulation_check(filename="path_data/dual_arm_trajectory.json", playback_speed=PLAYBACK_SPEED):
+def run_simulation_check(filename="trajectories/dual_arm_trajectory.json", playback_speed=PLAYBACK_SPEED):
     if playback_speed <= 0:
         raise ValueError("playback_speed must be greater than zero.")
 
@@ -50,12 +50,12 @@ def run_simulation_check(filename="path_data/dual_arm_trajectory.json", playback
 
 
     # ======= MOVABLE OBJECTS ==========
-    obj_positions = [[table_position[0]+0.15, table_position[1]+0.2, 0.925],
-                     [table_position[0]+0.15, table_position[1]-0.2, 0.925]]
+    # obj_positions = [[table_position[0]+0.15, table_position[1]+0.2, 0.925],
+    #                  [table_position[0]+0.15, table_position[1]-0.2, 0.925]]
 
-    obj_ori = p.getQuaternionFromEuler([0,0,0])
-    for obj_pos in obj_positions:
-        obj = p.loadURDF("cube_small.urdf", obj_pos, obj_ori, globalScaling=1.2)
+    # obj_ori = p.getQuaternionFromEuler([0,0,0])
+    # for obj_pos in obj_positions:
+    #     obj = p.loadURDF("cube_small.urdf", obj_pos, obj_ori, globalScaling=1.2)
 
     # ======= FRANKA ROBOT =======
     table_surface_z = table_position[2] + table_height + 0.02       # 2cm support of our robot
@@ -173,4 +173,4 @@ def run_simulation_check(filename="path_data/dual_arm_trajectory.json", playback
     p.disconnect()
 
 if __name__ == "__main__":
-    run_simulation_check()
+    run_simulation_check(filename="trajectories/handover.json")

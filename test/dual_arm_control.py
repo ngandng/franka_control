@@ -7,7 +7,7 @@ import threading
 
 import pylibfranka as franka
 from pylibfranka_examples.example_common import setDefaultBehaviour
-from panda_joint_limits import START_MOVE_MAX_JOINT_VELOCITIES, TRAJECTORY_MAX_JOINT_VELOCITIES
+from fr3_joint_limits import START_MOVE_MAX_JOINT_VELOCITIES, TRAJECTORY_MAX_JOINT_VELOCITIES
 
 # ============= GLOBAL CONFIGURATION =============
 LEFT_ROBOT_IP = "172.16.0.3"
@@ -450,4 +450,4 @@ def run_hardware_execution(filename="path_data/dual_arm_trajectory.json"):
 
 
 if __name__ == "__main__":
-    run_hardware_execution(filename="path_data/dual_arm_trajectory.json")
+    run_hardware_execution(filename="trajectories/handover.json")

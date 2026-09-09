@@ -4,10 +4,10 @@ import os
 import re
 import numpy as np
 
-from panda_joint_limits import (
-    PANDA_JOINT_LOWER_LIMITS,
-    PANDA_JOINT_UPPER_LIMITS,
-    PANDA_JOINT_VELOCITY_LIMITS,
+from fr3_joint_limits import (
+    FR3_JOINT_LOWER_LIMITS,
+    FR3_JOINT_UPPER_LIMITS,
+    FR3_JOINT_VELOCITY_LIMITS,
     TRAJECTORY_MAX_JOINT_VELOCITIES,
 )
 
@@ -316,14 +316,14 @@ def build_trajectory(configurations: list[dict]) -> list[dict]:
     return trajectory
 
 
-def validate_panda_joint_limits(trajectory: list[dict]) -> None:
-    """Reject trajectories beyond Panda position or physical velocity limits."""
+def validate_fr3_joint_limits(trajectory: list[dict]) -> None:
+    """Reject trajectories beyond FR3 position or physical velocity limits."""
     violations = []
     for waypoint_index, waypoint in enumerate(trajectory):
         for arm_name in ("left", "right"):
             joints = waypoint[f"{arm_name}_joints"]
             for joint_index, (value, lower, upper) in enumerate(
-                zip(joints, PANDA_JOINT_LOWER_LIMITS, PANDA_JOINT_UPPER_LIMITS),
+                zip(joints, FR3_JOINT_LOWER_LIMITS, FR3_JOINT_UPPER_LIMITS),
                 start=1,
             ):
                 if not lower <= value <= upper:
@@ -345,7 +345,7 @@ def validate_panda_joint_limits(trajectory: list[dict]) -> None:
                 zip(
                     previous[f"{arm_name}_joints"],
                     current[f"{arm_name}_joints"],
-                    PANDA_JOINT_VELOCITY_LIMITS,
+                    FR3_JOINT_VELOCITY_LIMITS,
                 ),
                 start=1,
             ):
@@ -367,7 +367,7 @@ def validate_panda_joint_limits(trajectory: list[dict]) -> None:
     if violations:
         preview = "\n  ".join(violations[:10])
         raise ValueError(
-            f"Trajectory contains {len(violations)} Panda position/velocity-limit violations. "
+            f"Trajectory contains {len(violations)} FR3 position/velocity-limit violations. "
             "Replan the source path; do not export it for hardware playback.\n"
             f"  {preview}"
         )
@@ -379,7 +379,7 @@ def validate_panda_joint_limits(trajectory: list[dict]) -> None:
 
 def generate_trajectory_from_planned_path(
     input_txt:  str = "simple_pick_place_2_objects_dual_arm.txt",
-    output_dir: str = "path_data",
+    output_dir: str = "trajectories",
     output_file: str | None = None,
 ):
     os.makedirs(output_dir, exist_ok=True)
@@ -420,7 +420,7 @@ def generate_trajectory_from_planned_path(
 
     trajectory = build_trajectory(configurations)
     if arm_count == 2:
-        validate_panda_joint_limits(trajectory)
+        validate_fr3_joint_limits(trajectory)
 
     # Print events for quick sanity check
     print("\nTrajectory events:")
@@ -440,5 +440,7 @@ def generate_trajectory_from_planned_path(
 
 if __name__ == "__main__":
     generate_trajectory_from_planned_path(
-        input_txt="simple_pick_place_2_objects_dual_arm.txt",
+        input_txt="paths/handover_2objs_2arms.txt",
+        output_dir="trajectories",
+        output_file="handover.json"
     )

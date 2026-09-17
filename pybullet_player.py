@@ -173,4 +173,4 @@ def run_simulation_check(filename="trajectories/dual_arm_trajectory.json", playb
     p.disconnect()
 
 if __name__ == "__main__":
-    run_simulation_check(filename="trajectories/handover.json")
+    run_simulation_check(filename="trajectories/stacking_4_objs.json")

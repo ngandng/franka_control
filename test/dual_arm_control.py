@@ -27,9 +27,7 @@ kStartJointTolerance = 0.01                     # rad (about 0.57 degrees)
 kControlPeriod = 0.010                          # 100 Hz; must match generated JSON
 kStartSettleTimeout = 5.0                       # seconds
 kGripperMoveSpeed = 0.1                         # m/s
-kGripperForce = 10.0                            # N
-kGripperGraspEpsilonInner = 0.005               # m below requested grasp width
-kGripperGraspEpsilonOuter = 0.005               # m above requested grasp width
+kGripperForce = 150.0                            # N
 
 motion_finished = False
 #=================================================
@@ -57,6 +55,16 @@ def validate_trajectory(trajectory):
             raise ValueError(f"Waypoint {index} must contain 7 left joint values.")
         if not isinstance(right_joints, list) or len(right_joints) != 7:
             raise ValueError(f"Waypoint {index} must contain 7 right joint values.")
+
+        for key in ("left_gripper", "right_gripper"):
+            width = step_data.get(key)
+            if width is not None and (
+                isinstance(width, bool)
+                or not isinstance(width, (int, float))
+                or not math.isfinite(width)
+                or width < 0
+            ):
+                raise ValueError(f"Waypoint {index} must contain a finite, non-negative {key} width in metres.")
 
         if not isinstance(step_data.get("time"), (int, float)):
             raise ValueError(f"Waypoint {index} must contain a numeric time value.")
@@ -115,38 +123,83 @@ def _raise_gripper_error(gripper_errors):
         raise RuntimeError(gripper_errors.pop(0))
 
 
+def _prepare_gripper(robot_ip, arm_label, trajectory):
+    """Require a working gripper when this arm has gripper commands."""
+    key = f"{arm_label.lower()}_gripper"
+    widths = [step[key] for step in trajectory if step.get(key) is not None]
+    if not widths:
+        print(f"{arm_label}: no gripper widths in trajectory; skipping gripper setup.")
+        return None, None
+
+    try:
+        print(f"{arm_label} gripper: connecting to {robot_ip} and homing...", flush=True)
+        gripper = franka.Gripper(robot_ip)
+        if not gripper.homing():
+            raise RuntimeError("homing returned False")
+        state = gripper.read_once()
+
+        # Clamp all gripper widths to the gripper's actual max capability
+        max_achievable = state.max_width
+        if max(widths) > max_achievable:
+            print(
+                f"{arm_label} gripper: clamping widths from {max(widths):.4f} m "
+                f"to max {max_achievable:.4f} m",
+                flush=True,
+            )
+            for step in trajectory:
+                if step.get(key) is not None and step[key] > max_achievable:
+                    step[key] = max_achievable
+
+        initial_width = trajectory[0].get(key)
+        if initial_width is not None:
+            if not gripper.move(initial_width, kGripperMoveSpeed):
+                raise RuntimeError(f"initial move to {initial_width:.4f} m returned False")
+        state = gripper.read_once()
+        print(
+            f"{arm_label} gripper ready: width={state.width:.4f} m, "
+            f"max_width={state.max_width:.4f} m, is_grasped={state.is_grasped}.",
+            flush=True,
+        )
+        return gripper, state.width
+    except Exception as exc:
+        raise RuntimeError(f"{arm_label} gripper setup failed at {robot_ip}: {exc}") from exc
+
+
 def _command_gripper_worker(gripper, width, previous_width, arm_label, gripper_errors):
     """Run a blocking gripper RPC outside the 100 Hz arm command loop."""
     try:
         if width < previous_width:
-            # Closing is force-controlled: keep closing until the requested
-            # width is reached or an object is contacted with this force.
-            succeeded = gripper.grasp(
+            # Closing is force-controlled: keep closing until the target width is reached
+            # or an object is contacted with the specified force.
+            # Note: returns False if no object detected, which is normal behavior.
+            gripper.grasp(
                 width,
                 kGripperMoveSpeed,
                 kGripperForce,
-                kGripperGraspEpsilonInner,
-                kGripperGraspEpsilonOuter,
             )
             action = "force grasp"
         else:
             # Opening does not need force control.
             succeeded = gripper.move(width, kGripperMoveSpeed)
-            action = "position move"
-        if not succeeded:
-            try:
-                final_width = gripper.read_once().width
-                final_state = (
-                    f" Measured final opening: {final_width:.3f} m; expected "
-                    f"{width - kGripperGraspEpsilonInner:.3f}–"
-                    f"{width + kGripperGraspEpsilonOuter:.3f} m."
+            if not succeeded:
+                try:
+                    final_width = gripper.read_once().width
+                    final_state = f" Measured final opening: {final_width:.3f} m."
+                except Exception as state_error:
+                    final_state = f" Could not read final gripper state: {state_error}"
+                gripper_errors.append(
+                    f"{arm_label} gripper rejected position move to {width:.3f} m."
+                    f"{final_state}"
                 )
-            except Exception as state_error:
-                final_state = f" Could not read final gripper state: {state_error}"
-            gripper_errors.append(
-                f"{arm_label} gripper rejected {action} to {width:.3f} m."
-                f"{final_state}"
-            )
+                return
+            action = "position move"
+
+        state = gripper.read_once()
+        print(
+            f"{arm_label} gripper completed {action}: target={width:.4f} m, "
+            f"measured={state.width:.4f} m, is_grasped={state.is_grasped}.",
+            flush=True,
+        )
     except Exception as exc:
         gripper_errors.append(
             f"{arm_label} gripper command to {width:.3f} m failed: {exc}"
@@ -287,19 +340,8 @@ def run_hardware_execution(filename="path_data/dual_arm_trajectory.json"):
         print(f"Could not connect to robots: {e}")
         sys.exit(-1)
 
-    left_gripper = None
-    right_gripper = None
-    try:
-        left_gripper = franka.Gripper(LEFT_ROBOT_IP)
-        left_gripper.homing()
-    except Exception as e:
-        print(f"Could not connect to left gripper: {e}")
-
-    try:
-        right_gripper = franka.Gripper(RIGHT_ROBOT_IP)
-        right_gripper.homing()
-    except Exception as e:
-        print(f"Could not connect to right gripper: {e}")
+    left_gripper, last_left_gripper = _prepare_gripper(LEFT_ROBOT_IP, "Left", trajectory)
+    right_gripper, last_right_gripper = _prepare_gripper(RIGHT_ROBOT_IP, "Right", trajectory)
 
     setDefaultBehaviour(left_robot)
     setDefaultBehaviour(right_robot)
@@ -330,9 +372,6 @@ def run_hardware_execution(filename="path_data/dual_arm_trajectory.json"):
 
         print("Pre-flight check passed. Starting execution in 3s... Hold the E-Stop!")
         time.sleep(3)
-
-        last_left_gripper = trajectory[0].get("left_gripper")
-        last_right_gripper = trajectory[0].get("right_gripper")
 
         next_tick = time.monotonic()
         late_tick_count = 0
@@ -435,19 +474,22 @@ def run_hardware_execution(filename="path_data/dual_arm_trajectory.json"):
         if not motion_finished:
             print("Trajectory playback finished. Waiting for user to exit...")
             while not motion_finished:
+                _raise_gripper_error(gripper_errors)
                 time.sleep(0.1)
 
     finally:
         for worker in gripper_workers.values():
             worker.join(timeout=1.0)
+        try:
+            if left_position_control_handler is not None:
+                left_position_control_handler.stop_control()
+        finally:
+            if right_position_control_handler is not None:
+                right_position_control_handler.stop_control()
         _raise_gripper_error(gripper_errors)
-        if left_position_control_handler is not None:
-            left_position_control_handler.stop_control()
-        if right_position_control_handler is not None:
-            right_position_control_handler.stop_control()
 
     print("Execution complete.")
 
 
 if __name__ == "__main__":
-    run_hardware_execution(filename="trajectories/handover.json")
+    run_hardware_execution(filename="trajectories/stacking_4_objs.json")

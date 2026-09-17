@@ -179,19 +179,26 @@ def quintic_smoothstep(progress: float) -> float:
     return 10 * progress**3 - 15 * progress**4 + 6 * progress**5
 
 
-def gripper_transition(gripper_from, gripper_to, t_start: float) -> list[dict]:
-    """Hold joints still and switch gripper target once, then hold it."""
-    # We don't know arm joints here — caller patches them in
+def gripper_hold(
+    t_start: float,
+    arms: list[list[float]],
+    grippers: list[float],
+    arm_count: int,
+    event: str,
+) -> list[dict]:
+    """Hold both arms still while one ordered gripper action completes."""
     steps = max(1, int(GRIPPER_ACTION_SEC / TIME_STEP))
     waypoints = []
     for i in range(steps):
-        # One command edge, then hold to avoid repeated open/close triggers.
-        g = gripper_to
-        waypoints.append({
-            "time":    round(t_start + i * TIME_STEP, 4),
-            "joints":  None,   # filled by caller
-            "gripper": round(g, 5),
-        })
+        waypoints.append(
+            _format_waypoint(
+                t_start + i * TIME_STEP,
+                arms,
+                grippers,
+                arm_count,
+                event=event if i == 0 else None,
+            )
+        )
     return waypoints
 
 
@@ -249,28 +256,49 @@ def build_trajectory(configurations: list[dict]) -> list[dict]:
                 current_grippers[arm_index] = gripper_for_arm(curr_robot_states, arm_index, current_grippers[arm_index])
 
         if current_grippers != prev_grippers:
-            actions = []
-            for arm_index in range(arm_count):
-                if current_grippers[arm_index] != prev_grippers[arm_index]:
-                    side = "RIGHT" if arm_index == PLANNER_RIGHT_ARM_INDEX else "LEFT"
-                    action = "CLOSE" if current_grippers[arm_index] == GRIPPER_CLOSED else "OPEN"
-                    actions.append(f"{side} {action} GRIPPER")
+            closing_arms = [
+                arm_index
+                for arm_index in range(arm_count)
+                if current_grippers[arm_index] < prev_grippers[arm_index]
+            ]
+            opening_arms = [
+                arm_index
+                for arm_index in range(arm_count)
+                if current_grippers[arm_index] > prev_grippers[arm_index]
+            ]
 
-            g_wps = gripper_transition(prev_grippers[0], current_grippers[0], t)
-            for wp in g_wps:
-                wp["time"] = round(wp["time"], 4)
-                if arm_count == 1:
-                    wp["joints"] = [round(v, 5) for v in prev_arms[0]]
-                else:
-                    wp.pop("joints", None)
-                    wp.pop("gripper", None)
-                    wp["left_joints"] = [round(v, 5) for v in prev_arms[PLANNER_LEFT_ARM_INDEX]]
-                    wp["right_joints"] = [round(v, 5) for v in prev_arms[PLANNER_RIGHT_ARM_INDEX]]
-                    wp["left_gripper"] = round(current_grippers[PLANNER_LEFT_ARM_INDEX], 5)
-                    wp["right_gripper"] = round(current_grippers[PLANNER_RIGHT_ARM_INDEX], 5)
-            g_wps[0]["event"] = f"{'; '.join(actions)} AT {prev_cfg['name']} (BEFORE {cfg['name']})"
-            trajectory.extend(g_wps)
-            t += GRIPPER_ACTION_SEC
+            def action_label(arm_index, action):
+                side = "RIGHT" if arm_index == PLANNER_RIGHT_ARM_INDEX else "LEFT"
+                return f"{side} {action} GRIPPER"
+
+            # A handover must secure the object before the other hand releases
+            # it.  Keep every opening gripper at its previous width until the
+            # closing stage's one-second hold has completed.
+            staged_grippers = list(prev_grippers)
+            if closing_arms:
+                for arm_index in closing_arms:
+                    staged_grippers[arm_index] = current_grippers[arm_index]
+                close_event = (
+                    f"{'; '.join(action_label(index, 'CLOSE') for index in closing_arms)} "
+                    f"AT {prev_cfg['name']} (BEFORE {cfg['name']})"
+                )
+                trajectory.extend(
+                    gripper_hold(t, prev_arms, staged_grippers, arm_count, close_event)
+                )
+                t += GRIPPER_ACTION_SEC
+
+            if opening_arms:
+                for arm_index in opening_arms:
+                    staged_grippers[arm_index] = current_grippers[arm_index]
+                timing_label = "AFTER CLOSE, BEFORE" if closing_arms else "BEFORE"
+                open_event = (
+                    f"{'; '.join(action_label(index, 'OPEN') for index in opening_arms)} "
+                    f"AT {prev_cfg['name']} ({timing_label} {cfg['name']})"
+                )
+                trajectory.extend(
+                    gripper_hold(t, prev_arms, staged_grippers, arm_count, open_event)
+                )
+                t += GRIPPER_ACTION_SEC
 
 
         # ── 3a. Move arm from prev to current ─────────────────────────────
@@ -440,7 +468,7 @@ def generate_trajectory_from_planned_path(
 
 if __name__ == "__main__":
     generate_trajectory_from_planned_path(
-        input_txt="paths/handover_2objs_2arms.txt",
+        input_txt="paths/stacking_4_objects.txt",
         output_dir="trajectories",
-        output_file="handover.json"
+        output_file="stacking_4_objs.json"
     )
